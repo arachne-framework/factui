@@ -90,9 +90,9 @@
     "Exactly the same as Clara's defquery, with the exception that
       Datalog-style binding tuples are allowed as conditions."
     [& args]
-    (let [conformed-args (s/conform ::defrule-args args)
+    (let [conformed-args (s/conform ::defquery-args args)
           swapped-args (swap-datalog-conditions conformed-args)
-          unformed-args (s/unform ::defrule-args swapped-args)]
+          unformed-args (s/unform ::defquery-args swapped-args)]
       `(c.r/defquery ~@unformed-args))))
 
 
@@ -115,6 +115,9 @@
 
 ;;;;;;;;;;;;;;;;;;; Rules to implement Datomic features
 
+(def ^:dynamic *tempid-bindings*)
+(def ^:dynamic *bootstrap* false)
+
 (c.r/defrule clean-up-transactions-rule
   "As the final rule, clean up by retracting all remaining transactional
    facts, as they are not intended to be a permanent part of the fact
@@ -124,47 +127,15 @@
   =>
   (apply c.r/retract! ?facts))
 
-(c.r/defrule insertions-rule
-  "Handle all :db/add operations"
-  [:or
-   ;; tempid case
-   [:and
-    [?op <- factui.facts.Operation [{op :op [e a v] :args}] (= op :db/add) (= ?tid e) (= ?a a) (= ?v v)]
-    [:test (not (pos-int? ?tid))]
-    [factui.facts.TempidBinding (= tempid ?tid) (= ?e eid)]]
-   ;; preexisting case
-   [:and
-    [?op <- factui.facts.Operation [{op :op [e a v] :args}] (= op :db/add) (= ?e e) (= ?a a) (= ?v v)]
-    [factui.facts.Datom (= e ?e)]
-    ]]
-  [:not [factui.facts.Datom (= e ?e) (= a ?a) (= v ?v)]]
+(c.r/defrule enforce-schema-rule
+  "Thrown an exception when trying to add an attribute not in the schema"
+  [?op <- factui.facts.Operation (= op ?op) (= ?a (second args))]
+  [:test (contains? #{:db/add :db/retract} ?op)]
+  [:not [factui.facts.Attribute (= ident ?a)]]
   =>
-  (c.r/retract! ?op)
-  (c.r/insert-unconditional! (f/->Datom ?e ?a ?v)))
-
-
-#_(c.r/defrule existing-insertions-rule
-  "Insertions to an existing entity ID. Prevents redundant insertions."
-  [?op <- factui.facts.Operation [{op :op [e a v] :args}]
-   (= op :db/add) (= ?e e) (= ?a a) (= ?v v)]
-  [factui.facts.Datom (= e ?e)]
-  [:not [factui.facts.Datom (= e ?e) (= a ?a) (= v ?v)]]
-  =>
-  (c.r/retract! ?op)
-  (c.r/insert-unconditional! (apply f/->Datom (:args ?op))))
-
-#_(c.r/defrule tempid-insertions-rule
-  "Once a tempid has been assigned, create a datom for each insertion
-   operation. Prevents redundant operations."
-  [?op <- factui.facts.Operation [{op :op [e a v] :args}]
-   (= op :db/add) (= ?tid e) (= ?a a) (= ?v v)]
-  [:test (not (pos-int? ?tid))]
-  [:not [factui.facts.Datom (= e ?e) (= a ?a) (= v ?v)]]
-  [factui.facts.TempidBinding (= tempid ?tid) (= ?e eid)]
-  =>
-  (let [datom (f/->Datom ?e ?a ?v)]
-    (c.r/insert-unconditional! datom)))
-
+  (when-not *bootstrap*
+    (throw (ex-info (str "Unknown attribute " ?a) {:attr ?a
+                                                   :operation ?op}))))
 
 (c.r/defrule missing-entity-rule
   "Insertions to a concrete entity ID not present in the DB should blow up"
@@ -174,7 +145,24 @@
   =>
   (throw (ex-info "Entity does not exist" {:eid ?e})))
 
-(def ^:dynamic *tempid-bindings*)
+(c.r/defrule insertions-rule
+  "Handle all :db/add operations"
+  {:salience -10}
+  [:or
+   ;; tempid case
+   [:and
+    [?op <- factui.facts.Operation [{op :op [e a v] :args}] (= op :db/add) (= ?tid e) (= ?a a) (= ?v v)]
+    [:test (not (pos-int? ?tid))]
+    [factui.facts.TempidBinding (= tempid ?tid) (= ?e eid)]]
+   ;; concrete eid case
+   [:and
+    [?op <- factui.facts.Operation [{op :op [e a v] :args}] (= op :db/add) (= ?e e) (= ?a a) (= ?v v)]
+    [factui.facts.Datom (= e ?e)]
+    ]]
+  [:not [factui.facts.Datom (= e ?e) (= a ?a) (= v ?v)]]
+  =>
+  (c.r/retract! ?op)
+  (c.r/insert-unconditional! (f/->Datom ?e ?a ?v)))
 
 (c.r/defrule assign-tempid-rule
   "Create a tempid binding for an unconstrainted tempid"
@@ -183,20 +171,18 @@
   [:test (not (pos-int? ?tid))]
   =>
   (let [eid (new-eid)]
-    (println "adding unconstrained binding:" ?tid eid)
     (swap! *tempid-bindings* assoc ?tid eid)
     (c.r/insert-unconditional! (f/->TempidBinding ?tid eid))))
 
 (c.r/defrule assign-identity-tempid-rule
   "Create a tempid binding for an ident attr"
   {:salience 100}
-  [factui.facts.Operation (= op :db/add) (= ?tid (first args)) (= ?attr (second args))]
+  [factui.facts.Operation [{op :op [e a v] :args}] (= op :db/add) (= ?tid e) (= ?a a) (= ?v v)]
   [:test (not (pos-int? ?tid))]
   [:not [factui.facts.TempidBinding (= tempid ?tid)]]
   [factui.facts.Attribute (= ident ?attr) (= true identity?)]
-  [factui.facts.Datom (= e ?eid) (= a ?attr)]
+  [factui.facts.Datom (= e ?eid) (= a ?attr) (= v ?v)]
   =>
-  (println "adding constrained binding:" ?tid ?attr ?eid)
   (swap! *tempid-bindings* assoc ?tid ?eid)
   (c.r/insert-unconditional! (f/->TempidBinding ?tid ?eid)))
 
@@ -242,89 +228,114 @@
           new-session (c.r/fire-rules (c.r/insert-all session facts))]
       [new-session @*tempid-bindings*])))
 
+(defn transact-all
+  "Apply multiple transactions sequentially, returning the updated session."
+  [session & txes]
+  (reduce (fn [s tx]
+            (first (transact s tx)))
+    session txes))
+
+(def bootstrap-schema
+  "Initial schema for the FactUI fact base"
+  [{:db/ident :db/valueType
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/keyword}
+   {:db/ident :db/unique
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/keyword}
+   {:db/ident :db/ident
+    :db/cardinality :db.cardinality/one
+    :db/unique :db.unique/identity
+    :db/valueType :db.type/keyword}
+   {:db/ident :db/cardinality
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/keyword}
+   {:db/ident :db/cardinality
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/keyword}
+   {:db/ident :db/doc
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/string}
+   {:db/ident :db/doc
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/string}
+   {:db/ident :db/isComponent
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/boolean}
+   ;; Compatibility purposes only
+   {:db/ident :db/index
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/boolean}
+   {:db/ident :db/fulltext
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/boolean}
+   {:db/ident :db/noHistory
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/boolean}])
+
+(defmacro defsession
+  "Wrapper for Clara's `defsession`, which takes the same arguments.
+
+  Automatically handles adding the FactUI schema & rules."
+  [name & args]
+  (let [original-name (gensym)]
+    `(do
+       (c.r/defsession ~original-name 'factui.rules ~@args)
+       (binding [*bootstrap* true]
+         (def ~name
+           (first (transact ~original-name bootstrap-schema)))))))
+
+(defquery people
+  "doc"
+  []
+  [?p :person/name ?name]
+  [?p :person/id ?id])
+
 (comment
   (require '[clara.tools.inspect :as ins])
   (use 'clojure.pprint)
 
+  (do
+    (defsession sess)
 
-  (let [sess (c.r/mk-session)
-        [sess tids] (transact sess [{:db/id "luke"
-                                     :person/age 32
-                                     :person/name "Luke"}
-                                    {:person/name "George"
-                                     :person/age 40}])
-        [sess _] (transact sess [{:db/id (get tids "luke")
-                                  :person/age 32}
-                                 {:db/id (get tids "luke")
-                                  :person/age 33}])]
-    (println "\n\nfinal state:\n")
-    (pprint
-      (c.r/query sess everything))
-    (println "\n")
-    )
+    (def sess' (transact-all sess
+                 [{:db/ident :person/name
+                   :db/valueType :db.type/string
+                   :db/cardinality :db.cardinality/one}]
+                 [{:person/name "Luke"}]))
 
-  ;; Testing schema
-  (let [sess (c.r/mk-session)
-        [sess _] (transact sess [{:db/id "name-attr"
-                                  :db/ident :person/name
-                                  :db/valueType :db.type/string
-                                  :db/cardinality :db.cardinality/many}
-                                 {:db/id "age-attr"
-                                  :db/ident :person/age
-                                  :db/valueType :db.type/long
-                                  :db/cardinality :db.cardinality/one}
-                                 {:db/id "id-attr"
-                                  :db/ident :person/id
-                                  :db/valueType :db.type/string
-                                  :db/cardinality :db.cardinality/one
-                                  :db/unique :db.unique/identity}])
-        [sess _] (transact sess [{:db/id "luke1"
-                                  :person/id "42"
-                                  :person/name "Luke"}])
-        [sess eids] (transact sess [{:db/id "luke2"
-                                     :person/id "42"
-                                     :person/age 32}])
+    (def sess' (transact-all sess
+                 [{:db/ident :person/id
+                   :db/valueType :db.type/long
+                   :db/cardinality :db.cardinality/one
+                   :db/unique :db.unique/identity}
+                  {:db/ident :person/name
+                   :db/valueType :db.type/string
+                   :db/cardinality :db.cardinality/one}]
+                 [{:person/id 42
+                   :person/name "Luke"}]
+                 [{:person/id 43
+                   :person/name "Chad"}]
+                 [{:person/id 42
+                   :person/name "Luke V."}]
+
+                 ))
 
 
-        ]
-    (println "\n\nfinal state:\n")
-    (pprint
-      (c.r/query sess  find-entity :?eid (get eids "luke")))
-    (println "\n")
-    )
+    (c.r/query sess' people)
 
-  ;; Simpler schema
-  (let [sess (c.r/mk-session)
-        [sess _] (transact sess [{:db/id "e0"
-                                  :db/ident :person/id
-                                  :db/valueType :db.type/string
-                                  :db/cardinality :db.cardinality/one
-                                  :db/unique :db.unique/identity}])
-        [sess _] (transact sess [{:db/id "e1"
-                                  :person/id "42"
-                                  :person/name "Luke"
-                                  :person/age 31}])
-        [sess eids] (transact sess [{:db/id "e2"
-                                     :person/id "42"
-                                     :person/age 31}])
-
-
-        ]
-    (println "\n\nfinal state:\n")
-    (pprint
-      (c.r/query sess everything))
-    (println "\n")
-    )
-
-
-  )
+    ))
 
 
 
 
-;; TODO: Build txdata interface
-;; TODO: Build rules to enforce key Datomic semantics
-;; - No new entity IDs
-;; - Cardinality 1
-;; - Tempids & upsert with db/identity
-;; - Tx-functions (probably not?)
+
+
+    ;; TODO: Build txdata interface (DONE)
+    ;; TODO: Build rules to enforce key Datomic semantics (IN PROGRESS)
+    ;; - No new entity IDs (DONE)
+    ;; - Cardinality 1 (IN PROGRESS)
+    ;; - Tempids & upsert with db/identity (DONE)
+    ;; - Tx-functions (mechanism in place)
+    ;; TODO: Build more idiomatic query API
+    ;; TODO: Do some benchmarks

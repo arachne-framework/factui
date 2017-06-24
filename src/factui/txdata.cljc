@@ -83,32 +83,3 @@
     (->> conformed
       (mapcat to-list)
       (map to-fact))))
-
-(comment
-
-  (use 'clojure.pprint)
-
-  (pprint
-    (txdata [{:person/name "Luke"
-              :person/age 32
-              :person/likes ["Beer" "Meat"]
-              :person/spouse {:person/name "Hannah"
-                              :person/children [{:db/id "beren"
-                                                 :person/name "Beren"}]}
-              :person/children [{:db/id "beren"}]
-              }
-             [:db/retract 77 :person/age 4]
-             [:db/add "beren" :person/age 5]
-             ]))
-
-
-  (pprint
-    (s/conform ::txdata [[:db/add 32 :person/name "Luke"]
-                         {:db/id 3
-                          :person/name "Luke"
-                          :person/parents [{:person/name "Joel"}
-                                           {:person/name "Mary"}]
-                          :person/aliases #{"Bilbo" "Gwahir"}
-                          :person/spouse {:person/name "Hannah"}}]))
-
-  )
