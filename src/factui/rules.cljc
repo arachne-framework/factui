@@ -146,7 +146,8 @@
   (throw (ex-info "Entity does not exist" {:eid ?e})))
 
 (c.r/defrule insertions-rule
-  "Handle all :db/add operations"
+  "Monster rule to handle all :db/add operations, in all their various
+   flavors."
   {:salience -10}
   [:or
    ;; tempid case
@@ -160,8 +161,19 @@
     [factui.facts.Datom (= e ?e)]
     ]]
   [:not [factui.facts.Datom (= e ?e) (= a ?a) (= v ?v)]]
+  [:or
+   ;; Cardinality many
+   [:not [factui.facts.Attribute (= ident ?a) (= true card-one?)]]
+   ;; Cardinality one without old value
+   [factui.facts.Attribute (= ident ?a) (= true card-one?)]
+   ;; Cardinality one with old value
+   [:and
+    [factui.facts.Attribute (= ident ?a) (= true card-one?)]
+    [?old <- factui.facts.Datom (= e ?e) (= a ?a)]]]
   =>
   (c.r/retract! ?op)
+  (when ?old
+    (c.r/retract! ?old))
   (c.r/insert-unconditional! (f/->Datom ?e ?a ?v)))
 
 (c.r/defrule assign-tempid-rule
@@ -195,7 +207,7 @@
     (f/map->Attribute
       {:ident (:db/ident ?entity)
        :type (:db/valueType ?entity)
-       :card-many? (= :db.cardinality/many (:db/cardinality ?entity))
+       :card-one? (not= :db.cardinality/many (:db/cardinality ?entity))
        :identity? (= :db.unique/identity (:db/unique ?entity))})))
 
 ;;;;;;;;;;;;;;;;;;
@@ -288,21 +300,17 @@
 (defquery people
   "doc"
   []
-  [?p :person/name ?name]
-  [?p :person/id ?id])
+  [?p :person/id _]
+  [?p ?a ?v])
 
 (comment
   (require '[clara.tools.inspect :as ins])
   (use 'clojure.pprint)
 
   (do
-    (defsession sess)
 
-    (def sess' (transact-all sess
-                 [{:db/ident :person/name
-                   :db/valueType :db.type/string
-                   :db/cardinality :db.cardinality/one}]
-                 [{:person/name "Luke"}]))
+    (println "\n")
+    (defsession sess)
 
     (def sess' (transact-all sess
                  [{:db/ident :person/id
@@ -311,20 +319,30 @@
                    :db/unique :db.unique/identity}
                   {:db/ident :person/name
                    :db/valueType :db.type/string
-                   :db/cardinality :db.cardinality/one}]
+                   :db/cardinality :db.cardinality/one}
+                  {:db/ident :person/likes
+                   :db/valueType :db.type/string
+                   :db/cardinality :db.cardinality/many}]
                  [{:person/id 42
-                   :person/name "Luke"}]
+                   :person/name "Luke"
+                   :person/likes #{"Beer" "Cheese"}}]
                  [{:person/id 43
                    :person/name "Chad"}]
                  [{:person/id 42
-                   :person/name "Luke V."}]
+                   :person/likes "Meat"}]
 
                  ))
 
 
-    (c.r/query sess' people)
 
-    ))
+    (pprint
+      (c.r/query sess' people))
+
+    )
+
+
+
+  )
 
 
 
@@ -334,8 +352,8 @@
     ;; TODO: Build txdata interface (DONE)
     ;; TODO: Build rules to enforce key Datomic semantics (IN PROGRESS)
     ;; - No new entity IDs (DONE)
-    ;; - Cardinality 1 (IN PROGRESS)
+    ;; - Cardinality 1 (DONE)
     ;; - Tempids & upsert with db/identity (DONE)
     ;; - Tx-functions (mechanism in place)
-    ;; TODO: Build more idiomatic query API
+    ;; TODO: Build more idiomatic query API (with :find clause & aggs)
     ;; TODO: Do some benchmarks

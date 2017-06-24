@@ -11,4 +11,4 @@
 (defrecord TempidBinding [tempid eid]
   Transactional)
 
-(defrecord Attribute [ident type card-many? identity?])
+(defrecord Attribute [ident type card-one? identity?])
