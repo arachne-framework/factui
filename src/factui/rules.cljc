@@ -4,7 +4,9 @@
             [clara.rules :as c.r]
             [clara.rules.accumulators :as acc]
             [clojure.spec.alpha :as s]
-            [clojure.walk :as w]))
+            [clojure.walk :as w]
+            [clojure.string :as str])
+  [:refer-clojure :exclude [find]])
 
 (s/def ::condition
   (s/or :boolean-expr ::boolean-expr
@@ -54,6 +56,56 @@
 (s/fdef defrule :args ::defrule-args)
 (s/fdef defquery :args ::defquery-args)
 
+(s/def ::find-expr (s/or :find-rel ::find-rel
+                         :find-coll ::find-coll
+                         :find-tuple ::find-tuple
+                         :find-scalar ::find-scalar
+                          ))
+
+(s/def ::variable (s/and symbol? #(str/starts-with? % "?")))
+(s/def ::aggregate list?)
+(s/def ::find-elem (s/or :agg ::aggregate
+                         :var ::variable))
+
+(s/def ::find-rel (s/coll-of ::find-elem ::min-count 1 :kind vector?))
+(s/def ::find-coll (s/tuple (s/tuple ::find-elem #{'...})))
+(s/def ::find-scalar (s/tuple ::find-elem #{'.}))
+(s/def ::find-tuple (s/tuple (s/coll-of ::find-elem ::min-count 1 :kind vector?)))
+
+(def ^:dynamic *tempid-bindings*)
+(def ^:dynamic *bootstrap* false)
+
+(defn find
+  "Given the result of a Clara query, apply the supplied Datomic-style find
+   expression.
+
+   Pull expressions in a find clause are not supported (in RETE, pull
+   expressions need to be part of the query body.)
+
+   Note that aggregates applied in this phase will be processed *after* the
+   query returns, not as part of the optimized RETE network. If optimized
+   aggregates are required, use a Clara condition in the rule body, instead."
+  [find-expr results]
+  (let [expr (s/conform ::find-expr find-expr)
+        _ (when (= ::s/invalid (throw (ex-info "Invalid find expression" {:expr find-expr}))))
+        ;extracted (extract-elements body results)
+        ]
+    expr
+    ))
+
+(defn query
+  "Query with a slightly more Datomic-style API.
+
+  Takes a 'find' expression and a map of symbol param bindings."
+  ([session query find-expr]
+   (factui.rules/query session query find-expr {}))
+  ([session query find-expr bindings]
+   (let [args (mapcat (fn [[k v]]
+                        [(keyword k) v]) bindings)
+         result (apply c.r/query session query args)]
+     (find find-expr result))))
+
+
 (defn- convert-constraint
   "Convert a conformed Datalog-style constraint to a conformed Clara-style
    constraint"
@@ -65,7 +117,7 @@
     {:fact-type 'factui.facts.Datom
      :s-expressions exprs}))
 
-(defn swap-datalog-conditions
+(defn- swap-datalog-conditions
   "Walk conformed arguments to defrule, replacing any datalog conditions with
    regular Clara conditions."
   [args]
@@ -95,28 +147,80 @@
           unformed-args (s/unform ::defquery-args swapped-args)]
       `(c.r/defquery ~@unformed-args))))
 
-
 (let [eid (atom 1)]
   (defn new-eid
     "Return a new, unique EID"
     []
     (swap! eid inc)))
 
-(defn entity
-  "Returns an accumulator that builds an entity map from a set of datoms.
 
-  Currently extremely naive: doesn't handle cardinality many attributes, or
-  handle retraction properly (although these could be added)"
-  []
-  (acc/accum
-    {:initial-value {}
-     :reduce-fn (fn [entity {:keys [e a v]}]
-                  (assoc entity a v))}))
+(defn transact
+  "Add Datomic-style transaction data to the session, returning a tuple of the
+   new session and a map of the tempid bindings."
+  [session txdata]
+  (binding [*tempid-bindings* (atom {})]
+    (let [facts (txdata/txdata txdata)
+          new-session (c.r/fire-rules (c.r/insert-all session facts))]
+      [new-session @*tempid-bindings*])))
+
+(defn transact-all
+  "Apply multiple transactions sequentially, returning the updated session."
+  [session & txes]
+  (reduce (fn [s tx]
+            (first (transact s tx)))
+    session txes))
+
+(def bootstrap-schema
+  "Initial schema for the FactUI fact base"
+  [{:db/ident :db/valueType
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/keyword}
+   {:db/ident :db/unique
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/keyword}
+   {:db/ident :db/ident
+    :db/cardinality :db.cardinality/one
+    :db/unique :db.unique/identity
+    :db/valueType :db.type/keyword}
+   {:db/ident :db/cardinality
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/keyword}
+   {:db/ident :db/cardinality
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/keyword}
+   {:db/ident :db/doc
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/string}
+   {:db/ident :db/doc
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/string}
+   {:db/ident :db/isComponent
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/boolean}
+   ;; Compatibility purposes only
+   {:db/ident :db/index
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/boolean}
+   {:db/ident :db/fulltext
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/boolean}
+   {:db/ident :db/noHistory
+    :db/cardinality :db.cardinality/one
+    :db/valueType :db.type/boolean}])
+
+(defmacro defsession
+  "Wrapper for Clara's `defsession`, which takes the same arguments.
+
+  Automatically handles adding the FactUI schema & rules."
+  [name & args]
+  (let [original-name (gensym)]
+    `(do
+       (c.r/defsession ~original-name 'factui.rules ~@args)
+       (binding [*bootstrap* true]
+         (def ~name
+           (first (transact ~original-name bootstrap-schema)))))))
 
 ;;;;;;;;;;;;;;;;;;; Rules to implement Datomic features
-
-(def ^:dynamic *tempid-bindings*)
-(def ^:dynamic *bootstrap* false)
 
 (c.r/defrule clean-up-transactions-rule
   "As the final rule, clean up by retracting all remaining transactional
@@ -201,159 +305,30 @@
 (c.r/defrule schema-insertion-rule
   "Adds attribute facts to the DB when schema txdata is transacted"
   [factui.facts.Datom (= e ?e) (= a :db/valueType)]
-  [?entity <- (entity) :from [factui.facts.Datom (= e ?e)]]
+  [?entity-datoms <- (acc/all) :from [factui.facts.Datom (= e ?e)]]
   =>
-  (c.r/insert-unconditional!
-    (f/map->Attribute
-      {:ident (:db/ident ?entity)
-       :type (:db/valueType ?entity)
-       :card-one? (not= :db.cardinality/many (:db/cardinality ?entity))
-       :identity? (= :db.unique/identity (:db/unique ?entity))})))
-
-;;;;;;;;;;;;;;;;;;
-
-
-(c.r/defquery everything
-  "Return everything in the session."
-  []
-  [?fact <- java.util.Map])
+  (let [entity (reduce (fn [acc datom]
+                         (assoc acc (:a datom) (:v datom)))
+                 {:db/id ?e}
+                 ?entity-datoms)]
+    (c.r/insert-unconditional!
+      (f/map->Attribute
+        {:ident (:db/ident entity)
+         :type (:db/valueType entity)
+         :card-one? (not= :db.cardinality/many (:db/cardinality entity))
+         :identity? (= :db.unique/identity (:db/unique entity))}))))
 
 
-(c.r/defquery datoms
-  "Return everything in the session."
-  []
-  [?fact <- factui.facts.Datom])
-
-(c.r/defquery find-entity
-  "Return all datoms relating to an entity"
-  [:?eid]
-  [?fact <- factui.facts.Datom (= e ?eid)])
-
-(use 'clojure.pprint)
-
-(defn transact
-  "Add Datomic-style transaction data to the session, returning a tuple of the
-   new session and a map of the tempid bindings."
-  [session txdata]
-  (binding [*tempid-bindings* (atom {})]
-    (let [facts (txdata/txdata txdata)
-          new-session (c.r/fire-rules (c.r/insert-all session facts))]
-      [new-session @*tempid-bindings*])))
-
-(defn transact-all
-  "Apply multiple transactions sequentially, returning the updated session."
-  [session & txes]
-  (reduce (fn [s tx]
-            (first (transact s tx)))
-    session txes))
-
-(def bootstrap-schema
-  "Initial schema for the FactUI fact base"
-  [{:db/ident :db/valueType
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/keyword}
-   {:db/ident :db/unique
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/keyword}
-   {:db/ident :db/ident
-    :db/cardinality :db.cardinality/one
-    :db/unique :db.unique/identity
-    :db/valueType :db.type/keyword}
-   {:db/ident :db/cardinality
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/keyword}
-   {:db/ident :db/cardinality
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/keyword}
-   {:db/ident :db/doc
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/string}
-   {:db/ident :db/doc
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/string}
-   {:db/ident :db/isComponent
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/boolean}
-   ;; Compatibility purposes only
-   {:db/ident :db/index
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/boolean}
-   {:db/ident :db/fulltext
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/boolean}
-   {:db/ident :db/noHistory
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/boolean}])
-
-(defmacro defsession
-  "Wrapper for Clara's `defsession`, which takes the same arguments.
-
-  Automatically handles adding the FactUI schema & rules."
-  [name & args]
-  (let [original-name (gensym)]
-    `(do
-       (c.r/defsession ~original-name 'factui.rules ~@args)
-       (binding [*bootstrap* true]
-         (def ~name
-           (first (transact ~original-name bootstrap-schema)))))))
-
-(defquery people
-  "doc"
-  []
-  [?p :person/id _]
-  [?p ?a ?v])
-
-(comment
-  (require '[clara.tools.inspect :as ins])
-  (use 'clojure.pprint)
-
-  (do
-
-    (println "\n")
-    (defsession sess)
-
-    (def sess' (transact-all sess
-                 [{:db/ident :person/id
-                   :db/valueType :db.type/long
-                   :db/cardinality :db.cardinality/one
-                   :db/unique :db.unique/identity}
-                  {:db/ident :person/name
-                   :db/valueType :db.type/string
-                   :db/cardinality :db.cardinality/one}
-                  {:db/ident :person/likes
-                   :db/valueType :db.type/string
-                   :db/cardinality :db.cardinality/many}]
-                 [{:person/id 42
-                   :person/name "Luke"
-                   :person/likes #{"Beer" "Cheese"}}]
-                 [{:person/id 43
-                   :person/name "Chad"}]
-                 [{:person/id 42
-                   :person/likes "Meat"}]
-
-                 ))
-
-
-
-    (pprint
-      (c.r/query sess' people))
-
-    )
-
-
-
-  )
-
-
-
-
-
-
-    ;; TODO: Build txdata interface (DONE)
-    ;; TODO: Build rules to enforce key Datomic semantics (IN PROGRESS)
+;; TODO: Build txdata interface (DONE)
+    ;; TODO: Build rules to enforce key Datomic semantics (DONE)
     ;; - No new entity IDs (DONE)
     ;; - Cardinality 1 (DONE)
     ;; - Tempids & upsert with db/identity (DONE)
     ;; - Tx-functions (mechanism in place)
-    ;; TODO: Build more idiomatic query API (with :find clause & aggs)
+    ;; - Component Retraction (TODO)
+    ;; TODO: Write some tests
+    ;; TODO: POSSIBLE: Write a pull expression aggregate
+    ;; TODO: POSSIBLE: Build more datomic-like API (with :find clause & aggs)
+     ; TODO: POSSIBLE: Build more datomic-like aggregates API
     ;; TODO: Do some benchmarks
+    ;; TODO: Build some UI/React Wrappers
