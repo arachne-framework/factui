@@ -7,8 +7,7 @@
    [clara.rules.memory :as mem]
    #?(:clj
     [clojure.test :as t :refer [deftest is testing run-tests]])
-   #?(:cljs [cljs.test :as t :refer-macros [deftest is testing run-tests]])
-    [clara.rules :as c.r]))
+   #?(:cljs [cljs.test :as t :refer-macros [deftest is testing run-tests]])))
 
 (def test-schema
   [{:db/ident :person/id
