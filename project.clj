@@ -3,8 +3,8 @@
                  [org.clojure/core.async "0.3.443"]
                  [com.cerner/clara-rules "0.15.0" :exclusions [prismatic/schema]]
                  [prismatic/schema "1.1.6"]]
-  :source-paths ["dev"]
-  :profiles {:test {:plugins [[lein-shell "0.4.0"]
+  :source-paths ["dev" "src"]
+  :profiles {:test {:plugins [[lein-shell "0.4.0" :exclusions [org.clojure/clojure]]
                               [lein-cljsbuild "1.1.6" :exclusions [org.clojure/clojure]]]
                     :dependencies [[org.clojure/clojurescript "1.9.562"
                                    :exclusions [org.clojure/tools.reader]]]

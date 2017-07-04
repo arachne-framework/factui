@@ -1,14 +1,11 @@
-(ns factui.facts)
-
-(defprotocol Transactional
-  "A fact that gets cleaned up as the last step of a transaction.")
+(ns factui.facts
+  (:require #?(:clj [clojure.core :as core]
+               :cljs [cljs.core :as core])))
 
 (defrecord Datom [e a v])
 
-(defrecord Operation [op args]
-  Transactional)
+(defrecord Operation [op args])
 
-(defrecord TempidBinding [tempid eid]
-  Transactional)
+(defrecord TempidBinding [tempid eid])
 
 (defrecord Attribute [ident type card-one? identity?])

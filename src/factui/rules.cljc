@@ -29,9 +29,11 @@
    facts, as they are not intended to be a permanent part of the fact
    store."
   {:salience -100}
-  [?facts <- (acc/all) :from [factui.facts.Transactional]]
+  [?ops <- (acc/all) :from [factui.facts.Operation]]
+  [?bindings <- (acc/all) :from [factui.facts.TempidBinding]]
   =>
-  (apply cr/retract! ?facts))
+  (when-not (empty? ?ops) (apply cr/retract! ?ops))
+  (when-not (empty? ?bindings) (apply cr/retract! ?bindings)))
 
 (cr/defrule enforce-schema-rule
   "Thrown an exception when trying to add an attribute not in the schema"

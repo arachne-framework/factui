@@ -47,13 +47,12 @@
 
 #?(:clj
    (defmacro defsession
-     "Wrapper for Clara's `defsession`, which takes the same arguments.
-
-    Automatically handles adding the FactUI schema & rules."
-     [name & args]
+     "Wrapper for Clara's `defsession`. Takes any number of namespaces names.
+      Rules and queries will be loaded for those namespaces."
+     [name & nses]
      (let [original-name (gensym)]
        `(do
-          (cr/defsession ~original-name 'factui.rules ~@args)
+          (cr/defsession ~original-name 'factui.rules ~@nses)
           (binding [r/*bootstrap* true]
             (def ~name
               (first (transact ~original-name bootstrap-schema))))))))
