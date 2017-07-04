@@ -1,4 +1,5 @@
 (ns factui.txdata
+  "Tools for converting Datomic-style txdata to sets of Clara facts"
   (:require [factui.facts :as f]
             [clojure.spec.alpha :as s]))
 
@@ -31,7 +32,6 @@
     "Return a unique tempid value"
     []
     (swap! next dec)))
-
 
 (declare map->lists)
 
@@ -67,7 +67,7 @@
     :map (second (map->lists txitem))))
 
 (defn to-fact
-  "Convert a Dtomic operation to an Operation fact"
+  "Convert a Datomic operation to an Operation fact"
   [[op & args]]
   (f/->Operation op args))
 

@@ -1,19 +1,53 @@
 (ns factui.ui.bench
   (:require [rum.core :as rum]
-            [clara.rules :as r :refer-macros [defquery defrule]]
-            ;[factui.rules :as fui :refer-macros [defrule #_defquery]]
+            [factui.api :as fui]
+            [factui.rules :as fools]
             [cljs.core.async :as a]
             [cljs.pprint :refer [pprint]])
-  (:require-macros [cljs.core.async.macros :refer [go]]))
+  (:require-macros [factui.api :as fui]))
 
 (enable-console-print!)
 
-(defrecord Datom [e a v])
+(defn now []
+  (.getTime (js/Date.)))
 
-(def attributes [:person/first-name :person/last-name :person/age :entity/id
-                 :entity/meta :entity/location :entity/size
-                 :meta/a :meta/b :meta/c
-                 :gamma/x :gamma/y :gamma/z :delta/x :delta/y :delta/z])
+(defn rand-date []
+  (js/Date. (- (now) (* 1000 60 60 24 365 (inc (rand-int 100))))))
+
+(def schema
+  [{:db/ident :person/id
+    :db/valueType :db.type/long
+    :db/cardinality :db.cardinality/one
+    :db/unique :db.unique/identity}
+   {:db/ident :person/name
+    :db/valueType :db.type/string
+    :db/cardinality :db.cardinality/one}
+   {:db/ident :person/likes
+    :db/valueType :db.type/string
+    :db/cardinality :db.cardinality/many}
+   {:db/ident :person/reads
+    :db/valueType :db.type/ref
+    :db/cardinality :db.cardinality/many}
+   {:db/ident :person/age
+    :db/valueType :db.type/long
+    :db/cardinality :db.cardinality/one}
+   {:db/ident :person/dob
+    :db/valueType :db.type/instant
+    :db/cardinality :db.cardinality/one}
+   {:db/ident :person/friends
+    :db/valueType :db.type/long
+    :db/cardinality :db.cardinality/many}
+
+   {:db/ident :book/id
+    :db/valueType :db.type/long
+    :db/cardinality :db.cardinality/one
+    :db/unique :db.unique/identity}
+   {:db/ident :book/title
+    :db/valueType :db.type/string
+    :db/cardinality :db.cardinality/one}
+   {:db/ident :book/subject
+    :db/valueType :db.type/string
+    :db/cardinality :db.cardinality/many}])
 
 (defn rand-string
   []
@@ -21,98 +55,28 @@
     (apply str (repeatedly len
                  #(rand-nth "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")))))
 
-;; comment
-(let [next (atom 10000)]
-  (defn next-eid []
-    (swap! next inc)
-    @next))
+(defn rand-person
+  [id]
+  {:person/id id
+   :person/name (rand-string)
+   :person/dob (rand-date)
+   :person/likes (repeatedly (inc (rand-int 10)) rand-string)})
 
-(defn rand-entity
-  [entity-size attrs]
-  (let [eid (next-eid)]
-    (repeatedly entity-size #(->Datom eid (rand-nth attrs) (rand-string)))))
+(defn rand-book
+  [id]
+  {:book/id id
+   :book/title (rand-string)
+   :book/subject (repeatedly (inc (rand-int 5)) rand-string)})
 
-(defn generate [entity-size attr-count entity-count]
-  "Return a set of randomly generated Datoms"
-  (let [attrs (vec (take attr-count attributes))]
-    (apply concat (repeatedly entity-count #(rand-entity entity-size attrs)))))
+(fui/defsession *base 'factui.ui.bench)
 
-(defn now []
-  (.getTime (js/Date.)))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defrule full-names
-  "Calculate the speed"
-  [Datom (= a :person/first-name) (= e ?e) (= v ?first)]
-  [Datom (= a :person/last-name) (= e ?e) (= v ?last)]
-  =>
-  (let [fullname (str ?first " " ?last)]
-    (r/insert! (->Datom ?e :person/full-name fullname))))
-
-(defrule multiple-names
-  "Calculate the speed"
-  [Datom (= a :person/full-name) (= e ?e) (= v ?name1)]
-  [Datom (= a :person/full-name) (= e ?e) (= v ?name2)]
-  [:test (not= ?name1 ?name2)]
-  =>
-  (r/insert! (->Datom ?e :person/has-multiple-names true)))
-
-(defquery basic-query
-  "Query to find an entity"
-  [:?eid]
-  [?datom <- Datom (= ?eid e)])
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(r/defsession blank-session 'factui.ui.bench)
-
-
-(defonce datoms (do
-                  (println "generating datoms")
-                  (time
-                    (doall
-                      (generate 10 10 10000)))))
-
-#_(def datoms [(->Datom 42 :person/first-name "Luke")
-             (->Datom 42 :person/last-name "VanderHart")])
-
-(defn basics
-  []
-  (-> blank-session
-    (r/insert-all datoms)
-    (r/fire-rules)))
-
-(def session (atom blank-session))
-
-(defn populate-session
-  "Return a populated session"
-  []
-  (println "inserting:" (count datoms))
-  (time
-    (reset! session (-> blank-session
-                      (r/insert-all datoms)
-                      (r/fire-rules)))))
-
-(defn q1
-  []
-  (vec
-    (time
-      (r/query @session basic-query :?eid 10001)))
-
-  )
-
-(defn qbench
-  []
-  (time
-    (dotimes [i 300]
-      (r/query @session basic-query :?eid (+ 10000 i)))
-    )
-  )
+;(def base (fui/transact-all base* schema))
 
 
 (defn ^:export main
   "Initialize the app and start rendering"
   []
-  ;(bench 1000)
+  (println "hello, world!")
+
+
   )
