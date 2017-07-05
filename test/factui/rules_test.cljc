@@ -32,11 +32,14 @@
   [::f/datom [{:keys [e a v]}] (= e ?p) (= a :person/id) (= v ?pid)]
   [::f/datom [{:keys [e a v]}] (= e ?p) (= a ?a) (= v ?v)])
 
+#?(:cljs (enable-console-print!))
+
 (api/defsession base* 'factui.rules-test)
 
 (def base (api/transact-all base* test-schema))
 
 (deftest tempids-resolve-to-same-entity
+  (println "running test...")
   (let [tid -42
         sesh (api/transact-all base [{:db/id tid
                                       :person/name "Luke"}

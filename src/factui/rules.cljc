@@ -33,9 +33,9 @@
   "Thrown an exception when trying to add an attribute not in the schema"
   [?op <- ::f/operation [{:keys [op args]}] (= op ?op) (= ?a (second args))]
   [:test (contains? #{:db/add :db/retract} ?op)]
-  [:not [::f/attribute  [{:keys [ident identity? card-one?]}] (= ident ?a)]]
+  [:not [::f/attribute [{:keys [ident identity? card-one?]}] (= ident ?a)]]
   =>
-  (when-not *bootstrap*
+  (when-not factui.rules/*bootstrap*
     (throw (ex-info (str "Unknown attribute " ?a) {:attr ?a
                                                    :operation ?op}))))
 
@@ -46,36 +46,6 @@
   [:not [::f/datom [{:keys [e a v]}] (= e ?e)]]
   =>
   (throw (ex-info "Entity does not exist" {:eid ?e})))
-
-#_(cr/defrule insertions-rule
-  "Monster rule to handle all :db/add operations, in all their various flavors."
-  {:salience -10}
-  [:or
-   ;; tempid case
-   [:and
-    [?op <- ::f/operation [{op :op [e a v] :args}] (= op :db/add) (= ?tid e) (= ?a a) (= ?v v)]
-    [:test (not (pos-int? ?tid))]
-    [::f/tempid-binding [{:keys [tempid eid]}] (= tempid ?tid) (= ?e eid)]]
-   ;; concrete eid case
-   [:and
-    [?op <- ::f/operation [{op :op [e a v] :args}] (= op :db/add) (= ?e e) (= ?a a) (= ?v v)]
-    [::f/datom [{:keys [e a v]}] (= e ?e)]
-    ]]
-  [:not [::f/datom [{:keys [e a v]}] (= e ?e) (= a ?a) (= v ?v)]]
-  [:or
-   ;; Cardinality many
-   [:not [::f/attribute  [{:keys [ident identity? card-one?]}] (= ident ?a) (= true card-one?)]]
-   ;; Cardinality one without old value
-   [::f/attribute  [{:keys [ident identity? card-one?]}] (= ident ?a) (= true card-one?)]
-   ;; Cardinality one with old value
-   [:and
-    [::f/attribute  [{:keys [ident identity? card-one?]}] (= ident ?a) (= true card-one?)]
-    [?old <- ::f/datom [{:keys [e a v]}] (= e ?e) (= a ?a)]]]
-  =>
-  (cr/retract! ?op)
-  (when ?old
-    (cr/retract! ?old))
-  (cr/insert-unconditional! (f/->Datom ?e ?a ?v)))
 
 (cr/defrule insertions-rule
   "Rule to transform :db/add operations to actual datoms"
@@ -140,8 +110,8 @@
   [:not [::f/tempid-binding [{:keys [tempid]}] (= tempid ?tid)]]
   [:test (not (pos-int? ?tid))]
   =>
-  (let [eid (new-eid)]
-    (swap! *tempid-bindings* assoc ?tid eid)
+  (let [eid (factui.rules/new-eid)]
+    (swap! factui.rules/*tempid-bindings* assoc ?tid eid)
     (cr/insert-unconditional! (f/->TempidBinding ?tid eid))))
 
 (cr/defrule assign-identity-tempid-rule
@@ -153,7 +123,7 @@
   [::f/attribute  [{:keys [ident identity? card-one?]}] (= ident ?attr) (= true identity?)]
   [::f/datom [{:keys [e a v]}]  (= e ?eid) (= a ?attr) (= v ?v)]
   =>
-  (swap! *tempid-bindings* assoc ?tid ?eid)
+  (swap! factui.rules/*tempid-bindings* assoc ?tid ?eid)
   (cr/insert-unconditional! (f/->TempidBinding ?tid ?eid)))
 
 (cr/defrule schema-insertion-rule
@@ -171,7 +141,6 @@
          :type (:db/valueType entity)
          :card-one? (not= :db.cardinality/many (:db/cardinality entity))
          :identity? (= :db.unique/identity (:db/unique entity))}))))
-
 
 ;; TODO: Build txdata interface (DONE)
     ;; TODO: Build rules to enforce key ::f/datom [{:keys [e a v]}] ic semantics (DONE)

@@ -10,12 +10,21 @@
 
 (def hierarchy (make-hierarchy))
 
-(defn type [obj]
-  (case (.getName (core/type obj))
-    "factui.facts.Datom" ::datom
-    "factui.facts.Operation" ::operation
-    "factui.facts.TempidBinding" ::tempid-binding
-    "factui.facts.Attribute" ::attribute))
+#?(:clj
+   (defn type [obj]
+     (case (.getName (core/type obj))
+       "factui.facts.Datom" ::datom
+       "factui.facts.Operation" ::operation
+       "factui.facts.TempidBinding" ::tempid-binding
+       "factui.facts.Attribute" ::attribute)))
+
+#?(:cljs
+   (defn type [obj]
+     (cond
+       (instance? Operation obj) ::operation
+       (instance? Datom obj) ::datom
+       (instance? TempidBinding obj) ::tempid-binding
+       (instance? Attribute obj) ::attribute)))
 
 (defn ancestors [type]
   (core/ancestors hierarchy type))
