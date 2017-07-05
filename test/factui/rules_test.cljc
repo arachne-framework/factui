@@ -1,13 +1,16 @@
 (ns factui.rules-test
   (:require
-    [factui.api :as api]
+    #?(:cljs [factui.api :as api :include-macros true]
+       :clj [factui.api :as api])
     [factui.facts :as f]
-    [clara.rules :as cr]
+    #?(:clj [clara.rules :as cr]
+       :cljs [clara.rules :as cr :include-macros true])
+   #?(:clj [factui.rules :as r]
+      :cljs [factui.rules :as r :include-macros true])
     [clojure.pprint :refer [pprint]]
    [clara.rules.memory :as mem]
-   #?(:clj
-    [clojure.test :as t :refer [deftest is testing run-tests]])
-   #?(:cljs [cljs.test :as t :refer-macros [deftest is testing run-tests]])))
+   #?(:clj [clojure.test :as t :refer [deftest is testing run-tests]]
+      :cljs [cljs.test :as t :refer-macros [deftest is testing run-tests]])))
 
 (def test-schema
   [{:db/ident :person/id
@@ -26,10 +29,11 @@
 
 (cr/defquery person-by-pid
   [:?pid]
-  [factui.facts.Datom [{:keys [e a v]}] (= e ?p) (= a :person/id) (= v ?pid)]
-  [factui.facts.Datom [{:keys [e a v]}] (= e ?p) (= a ?a) (= v ?v)])
+  [::f/datom [{:keys [e a v]}] (= e ?p) (= a :person/id) (= v ?pid)]
+  [::f/datom [{:keys [e a v]}] (= e ?p) (= a ?a) (= v ?v)])
 
 (api/defsession base* 'factui.rules-test)
+
 (def base (api/transact-all base* test-schema))
 
 (deftest tempids-resolve-to-same-entity
@@ -61,4 +65,15 @@
            (set (map #(select-keys % [:?a :?v]) results2))
            #{{:?a :person/name :?v "Luke"}
              {:?a :person/age :?v 32}
+             {:?a :person/id :?v 42}}))))
+
+(deftest card-one-overwrites
+  (let [sesh (api/transact-all base [{:person/id 42
+                                       :person/name "Luke"}]
+                                    [{:person/id 42
+                                       :person/name "Luke VanderHart"}])
+
+        results (cr/query sesh person-by-pid :?pid 42)]
+    (is (= (set (map #(select-keys % [:?a :?v]) results))
+           #{{:?a :person/name :?v "Luke VanderHart"}
              {:?a :person/id :?v 42}}))))

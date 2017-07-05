@@ -20,12 +20,14 @@
                                          {:id "test-whitespace"
                                           :source-paths ["src" "dev" "test"]
                                           :compiler {:main factui.test-runner
+                                                     :optimizations :whitespace
                                                      :output-to "target/test-ws.js"
                                                      :cache-analysis false}}
                                          {:id "test-advanced"
                                           :source-paths ["src" "dev" "test"]
                                           :compiler {:main factui.test-runner
                                                      :externs ["resources/phantomjs-externs.js"]
+                                                     :optimizations :advanced
                                                      :output-to "target/test-adv.js"
                                                      :cache-analysis false}}]}
                     :aliases {"test-clj" ["run" "-m" "factui.test-runner"]

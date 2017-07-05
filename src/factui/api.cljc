@@ -1,9 +1,11 @@
 (ns factui.api
   (:require [factui.txdata :as txdata]
-            [factui.rules :as r]
+            #?(:clj [factui.rules :as r]
+               :cljs [factui.rules :as r :include-macros true])
             [factui.facts :as f]
             [factui.compiler :as comp]
-            [clara.rules :as cr]
+            #?(:clj [clara.rules :as cr]
+               :cljs [clara.rules :as cr :include-macros true])
             [clojure.spec.alpha :as s]
             [clojure.string :as str]))
 
@@ -50,12 +52,15 @@
      "Wrapper for Clara's `defsession`. Takes any number of namespaces names.
       Rules and queries will be loaded for those namespaces."
      [name & nses]
-     (let [original-name (gensym)]
-       `(do
-          (cr/defsession ~original-name 'factui.rules ~@nses)
-          (binding [r/*bootstrap* true]
-            (def ~name
-              (first (transact ~original-name bootstrap-schema))))))))
+     (let [original-name (gensym)
+           body `(do
+                   (cr/defsession ~original-name 'factui.rules ~@nses
+                     :fact-type-fn f/type
+                     :ancestors-fn f/ancestors)
+                   (binding [r/*bootstrap* true]
+                     (def ~name
+                       (first (transact ~original-name bootstrap-schema)))))]
+       body)))
 
 (defn transact
   "Add Datomic-style transaction data to the session, returning a tuple of the
