@@ -62,13 +62,24 @@
                        (first (transact ~original-name bootstrap-schema)))))]
        body)))
 
+#?(:cljs (defn now []
+           (.getTime (js/Date.))))
+
+#?(:clj (defn now []
+          (System/currentTimeMillis)))
+
 (defn transact
   "Add Datomic-style transaction data to the session, returning a tuple of the
    new session and a map of the tempid bindings."
   [session txdata]
   (binding [r/*tempid-bindings* (atom {})]
     (let [facts (txdata/txdata txdata)
-          new-session (cr/fire-rules (cr/insert-all session facts))]
+          start (now)
+          new-session (cr/fire-rules (cr/insert-all session facts))
+          end (now)
+          elapsed (- end start)
+          ms-per-fact (/ elapsed (double (count facts)))]
+      (println "...transacted" (count facts) "in" elapsed "ms, for" ms-per-fact "ms per fact.")
       [new-session @r/*tempid-bindings*])))
 
 (defn transact-all

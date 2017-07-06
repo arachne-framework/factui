@@ -18,7 +18,7 @@
 (def ^:dynamic *tempid-bindings*)
 (def ^:dynamic *bootstrap* false)
 
-(cr/defrule clean-up-transactions-rule
+#_(cr/defrule clean-up-transactions-rule
   "As the final rule, clean up by retracting all remaining transactional
    facts, as they are not intended to be a permanent part of the fact
    store."
@@ -29,7 +29,7 @@
   (when-not (empty? ?ops) (apply cr/retract! ?ops))
   (when-not (empty? ?bindings) (apply cr/retract! ?bindings)))
 
-(cr/defrule enforce-schema-rule
+#_(cr/defrule enforce-schema-rule
   "Thrown an exception when trying to add an attribute not in the schema"
   [?op <- ::f/operation [{:keys [op args]}] (= op ?op) (= ?a (second args))]
   [:test (contains? #{:db/add :db/retract} ?op)]
@@ -39,7 +39,7 @@
     (throw (ex-info (str "Unknown attribute " ?a) {:attr ?a
                                                    :operation ?op}))))
 
-(cr/defrule missing-entity-rule
+#_(cr/defrule missing-entity-rule
   "Insertions to a concrete entity ID not present in the DB should blow up"
   [::f/operation [{:keys [op args]}] (= op :db/add) (= ?e (first args))]
   [:test (pos-int? ?e)]
@@ -47,20 +47,20 @@
   =>
   (throw (ex-info "Entity does not exist" {:eid ?e})))
 
-(cr/defrule insertions-rule
+#_(cr/defrule insertions-rule
   "Rule to transform :db/add operations to actual datoms"
   {:salience -10}
-  [?op <- ::f/operation [{op :op [e a v] :args}] (= op :db/add) (= ?e e) (= ?a a) (= ?v v)]
-  [:or [:and [:test (not (pos-int? ?e))]
+  [?op <- ::f/operation [{op :op [e a v] :args}] (= op :db/add) (= ?eid e) (= ?a a) (= ?v v)]
+  #_[:or [:and [:test (not (pos-int? ?e))]
              [::f/tempid-binding [{:keys [tempid eid]}] (= tempid ?e) (= ?eid eid)]]
        [:and [:test (pos-int? ?e)]
              [::f/datom [{:keys [e a v]}] (= e ?e) (= e ?eid)]]]
-  [:not [::f/datom [{:keys [e a v]}] (= e ?eid) (= a ?a) (= v ?v)]]
+  ;[:not [::f/datom [{:keys [e a v]}] (= e ?eid) (= a ?a) (= v ?v)]]
   =>
-  (cr/retract! ?op)
+  ;(cr/retract! ?op)
   (cr/insert-unconditional! (f/->Datom ?eid ?a ?v)))
 
-(cr/defrule insertions-with-old-value
+#_(cr/defrule insertions-with-old-value
   "When inserting a card-one attribute that has an old value, retract the old value."
   {:salience -9}
   [?op <- ::f/operation [{op :op [e a v] :args}] (= op :db/add) (= ?e e) (= ?a a) (= ?v v)]
@@ -76,7 +76,7 @@
   (cr/retract! ?old)
   (cr/insert-unconditional! (f/->Datom ?eid ?a ?v)))
 
-(cr/defrule unify-identity-tempids-rule
+#_(cr/defrule unify-identity-tempids-rule
   "If two or more operations in the same transaction have the same identity
    attr, they are the same and should have the same tempid"
   {:salience 50}
@@ -114,7 +114,7 @@
     (swap! factui.rules/*tempid-bindings* assoc ?tid eid)
     (cr/insert-unconditional! (f/->TempidBinding ?tid eid))))
 
-(cr/defrule assign-identity-tempid-rule
+#_(cr/defrule assign-identity-tempid-rule
   "Create a tempid binding for an ident attr that already exists in the DB"
   {:salience 100}
   [::f/operation [{op :op [e a v] :args}] (= op :db/add) (= ?tid e) (= ?a a) (= ?v v)]
@@ -126,7 +126,7 @@
   (swap! factui.rules/*tempid-bindings* assoc ?tid ?eid)
   (cr/insert-unconditional! (f/->TempidBinding ?tid ?eid)))
 
-(cr/defrule schema-insertion-rule
+#_(cr/defrule schema-insertion-rule
   "Adds attribute facts to the DB when schema txdata is transacted"
   [::f/datom [{:keys [e a v]}]  (= e ?e) (= a :db/valueType)]
   [?entity-datoms <- (acc/all) :from [::f/datom [{:keys [e a v]}]  (= e ?e)]]

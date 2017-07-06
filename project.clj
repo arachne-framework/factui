@@ -1,7 +1,7 @@
 (defproject factui "0.1.0-SNAPSHOT"
   :dependencies [[org.clojure/clojure "1.9.0-alpha17"]
                  [org.clojure/core.async "0.3.443"]
-                 [com.cerner/clara-rules "0.15.0" :exclusions [prismatic/schema]]
+                 [com.cerner/clara-rules "0.15.1" :exclusions [prismatic/schema]]
                  [prismatic/schema "1.1.6"]]
   :source-paths ["dev" "src"]
   :profiles {:test {:plugins [[lein-shell "0.4.0" :exclusions [org.clojure/clojure]]
@@ -29,13 +29,24 @@
                                                      :externs ["resources/phantomjs-externs.js"]
                                                      :optimizations :advanced
                                                      :output-to "target/test-adv.js"
+                                                     :cache-analysis false}}
+                                         {:id "test-bench"
+                                          :source-paths ["src" "dev" "test"]
+                                          :compiler {:main factui.bench
+                                                     :externs ["resources/phantomjs-externs.js"]
+                                                     :optimizations :whitespace
+                                                     :output-to "target/test-bench.js"
                                                      :cache-analysis false}}]}
                     :aliases {"test-clj" ["run" "-m" "factui.test-runner"]
                               "test-cljs" ["do" ["clean"]
                                            ["cljsbuild" "once" "test-advanced"]
                                            ["shell" "phantomjs" "target/test-adv.js"]]
                               "test-all" ["do" ["test-clj"]
-                                               ["test-cljs"]]}}
+                                               ["test-cljs"]]
+                              "bench" ["do" ["clean"]
+                                            ["cljsbuild" "once" "test-bench"]
+                                            ["shell" "phantomjs" "target/test-bench.js"]]
+                              }}
              :dev {:plugins [[lein-figwheel "0.5.10" :exclusions [org.clojure/clojurescript]]]
                    :dependencies [[rum "0.10.8"]
                                   [figwheel-sidecar "0.5.10"]]
