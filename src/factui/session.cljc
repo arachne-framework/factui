@@ -12,51 +12,14 @@
 ;;   - by existing datoms
 ;;   - by datoms in same tx
 
-;; Prevent duplicate datoms ; TODO
-;; Enforce cardinality one  ; TODO
+;; Prevent duplicate datoms ; DONE
+;; Enforce cardinality one  ; DONE
 ;; Enforce schema           ; TODO
 
-(def ^:no-doc base-schema
-  "Initial built-in schema"
-  [{:db/ident :db/valueType
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/keyword}
-   {:db/ident :db/unique
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/keyword}
-   {:db/ident :db/ident
-    :db/cardinality :db.cardinality/one
-    :db/unique :db.unique/identity
-    :db/valueType :db.type/keyword}
-   {:db/ident :db/cardinality
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/keyword}
-   {:db/ident :db/cardinality
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/keyword}
-   {:db/ident :db/doc
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/string}
-   {:db/ident :db/doc
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/string}
-   {:db/ident :db/isComponent
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/boolean}
-   ;; Compatibility purposes only
-   {:db/ident :db/index
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/boolean}
-   {:db/ident :db/fulltext
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/boolean}
-   {:db/ident :db/noHistory
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/boolean}])
+;; Bound in a transaction context
+(def ^:dynamic *store*)
 
-(def ^:dynamic *updates*)
-
-(deftype DatomicListener []
+(deftype DatomListener []
   l/IPersistentEventListener
   (to-transient [listener] listener)
   l/ITransientEventListener
@@ -69,20 +32,20 @@
   (right-retract! [listener node elements]
     listener)
   (insert-facts! [listener facts]
-    (swap! *updates* conj [:insert facts])
+
     listener)
   (alpha-activate! [listener node facts]
     listener)
   (insert-facts-logical! [listener node token facts]
-    (swap! *updates* conj [:insert facts])
+
     listener)
   (retract-facts! [listener facts]
-    (swap! *updates* conj [:retract facts])
+
     listener)
   (alpha-retract! [listener node facts]
     listener)
   (retract-facts-logical! [listener node token facts]
-    (swap! *updates* conj [:retract facts])
+
     listener)
   (add-accum-reduced! [listener node join-bindings result fact-bindings]
     listener)
@@ -97,41 +60,19 @@
   (to-persistent! [listener]
     listener))
 
-(let [eid (atom 10000)]
-  (defn- new-eid []
-    (swap! eid inc)))
-
-(defn- identity?
-  "Test of an attribute is an identity attribute"
-  [schema attr]
-  (-> schema attr :db/unique (= :db.unique/identity)))
-
-(defn- find-identity
-  "Given a set of datoms, return a [attr value] identity, if present."
-  [datoms schema]
-  (first (keep (fn [datom] (let [a (.-a datom)]
-                             (when (identity? schema a)
-                               [a (.-v datom)])))
-           datoms)))
-
-(defn- assign-eid
-  "Given a seq of datoms, set the e of each datom to the specified value"
-  [datoms e]
-  (map (fn [d] (assoc d :e e)) datoms))
-
-(defrecord DatomSession [delegate schema identities store]
+(defrecord DatomSession [delegate store]
   eng/ISession
   (insert [session datoms]
-    (DatomSession. (eng/insert delegate datoms) schema identities store))
+    (DatomSession. (eng/insert delegate datoms) store))
 
   (retract [session datoms]
-    (DatomSession. (eng/retract delegate datoms) schema identities store))
+    (DatomSession. (eng/retract delegate datoms) store))
 
   (fire-rules [session]
-    (DatomSession. (eng/fire-rules delegate) schema identities store))
+    (DatomSession. (eng/fire-rules delegate) store))
 
   (fire-rules [session opts]
-    (DatomSession. (eng/fire-rules delegate opts) schema identities store))
+    (DatomSession. (eng/fire-rules delegate opts) store))
 
   (query [session query params]
     (eng/query delegate query params))
@@ -139,96 +80,16 @@
   (components [session]
     (eng/components delegate)))
 
-(defn- build-schema
-  "Given txdata in entity map format, return a schema map"
-  [txdata]
-  (->> txdata
-    (filter :db/valueType)
-    (map (fn [txmap]
-           [(:db/ident txmap)
-            (select-keys txmap [:db/cardinality :db/unique])]))
-    (into {})))
-
 (defn- datom
   "Given a :db/add or :db/retraction operation, create a Datom record"
   [[_ e a v]]
   (f/->Datom e a v))
 
-;; TODO: This could be substantially faster using transients, if necessary
-(defn- assign-tempids
-  "Given a set of datoms, assign appropriate tempids. Return a 3-tuple with the
-   following values:
-
-   1. identities - the updated identities map
-   2. bindings - map of tempid -> entity ID bindings
-   3. datoms - set of datoms with concrete entity IDs
-
-   s:tuple of an updated identities map and a seq of datoms with
-   concrete entity IDs."
-  [datoms schema identities]
-  (reduce (fn [[identities bindings result-datoms] [tid datoms]]
-            (if (pos-int? tid)
-              [identities bindings (into result-datoms datoms)]
-              (let [identity (find-identity datoms schema)
-                    existing-eid (when identity (identities identity))
-                    eid (or existing-eid (new-eid))
-                    next-identities (cond
-                                      (not identity) identities
-                                      existing-eid identities
-                                      :else (assoc identities identity eid))
-                    new-bindings (assoc bindings tid eid)
-                    new-datoms (into result-datoms (assign-eid datoms eid))]
-                [next-identities new-bindings new-datoms])))
-    [identities {} #{}]
-    (group-by (fn [d] (.-e d)) datoms)))
-
-(defn- retract-datoms
-  "Update a DatomicSession, updating not only RETE nodes but the datom
-   set as well."
-  [session datoms]
-  (if (empty? datoms)
-    session
-    (let [session (update session :store store/retract datoms)]
-      (eng/retract session datoms))))
-
-(defn- insert-datoms
-  "Update a DatomicSession, updating not only RETE nodes but the datom
-   set and identity set as well"
-  [session datoms]
-  (if (empty? datoms)
-    datoms
-    (let [store (:store session)
-          [identities bindings datoms] (assign-tempids datoms
-                                         (:schema session)
-                                         (:identities session))
-          datoms (filter #(not (store/has? store %)) datoms)
-          retractions (keep #(store/replaces store %) datoms)
-          session (retract-datoms session retractions)
-          session (if (empty? datoms)
-                    session
-                    (eng/insert session datoms))
-          session (assoc session :identities identities)]
-      [session bindings])))
-
-(defn- update-store
-  "Update the session's datom store with all the datoms that were recently
-   added and retracted."
-  [session updates]
-  (update session :store
-    (fn [store]
-      (reduce (fn [store [type datoms]]
-                (case type
-                  :insert (store/insert store datoms)
-                  :retract (store/retract store datoms)))
-        store
-        updates))))
-
 (defn session
   "Create a new Datom Session with the specified schema txdata"
   [base schema-txdata]
-  (let [schema (build-schema (concat base-schema schema-txdata))
-        components (update (eng/components base) :listeners conj (DatomicListener.))]
-    (DatomSession. (eng/assemble components) schema {} (store/store schema))))
+  (let [components (update (eng/components base) :listeners conj (DatomListener.))]
+    (DatomSession. (eng/assemble components) (store/store schema-txdata))))
 
 (defn transact
   "Given a sequence of Datomic-style operations, transact them as Datom facts
@@ -237,13 +98,28 @@
     Returns a tuple of the new session and a map of tempids to resulting
     entity IDs."
   [session operations]
-  (binding [*store* (atom [])]
-    (let [ops-by-type (group-by first operations)
-          ;;TODO: support ops other than :db/add and :db/retraction here
-          insertions (map datom (:db/add ops-by-type))
-          retractions (map datom (:db/retract ops-by-type))
-          [session bindings] (insert-datoms session insertions)
-          session (retract-datoms session retractions)
-          session (eng/fire-rules session)
-          session (update-store session *updates*)]
-      [session bindings])))
+  (let [ops-by-type (group-by first operations)
+        ;;TODO: support ops other than :db/add and :db/retraction here
+        insertions (map datom (:db/add ops-by-type))
+        retractions (map datom (:db/retract ops-by-type))
+        store (:store session)
+        [store insert-facts retract-facts bindings] (store/insert store insertions)
+        store (store/retract store retractions)]
+    (binding [*store* (atom store)]
+      (let [session (-> session
+                      (eng/insert facts)
+                      (eng/fire-rules))
+            session (assoc session :store @*store*)]
+        [session bindings]))))
+
+;; Question: should I be *listening* to actually update the index, as opposed to updating it as soon as I know I am "going to"?
+
+;; I think so. Store/insert, as used, should only be used for tempid resolution.
+
+;; Updating the index is a completely separate task and should be strictly from *observing* (via the listener).
+
+;; Thus, we can decouple the tempid-resolution (to get concrete datoms) from updating the index.
+
+;;This works as long as we don't do multiple writes without an actual insert or firing rules. But that's always true when using "transact".
+
+

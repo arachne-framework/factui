@@ -63,21 +63,28 @@
             {:?a :person/id :?v 42}}))))
 
 (deftest identity-attribute-resolution
-  (let [s1 (api/transact-all base [{:person/id 42
-                                    :person/name "Luke"}
-                                   {:person/id 42
-                                    :person/age 32}])
-        s2 (api/transact-all base [{:person/id 42
-                                    :person/name "Luke"}]
-                                  [{:person/id 42
-                                    :person/age 32}])
-        results1 (cr/query s1 person-by-pid :?pid 42)
-        results2 (cr/query s2 person-by-pid :?pid 42)]
-    (is (= (set (map #(select-keys % [:?a :?v]) results1))
-           (set (map #(select-keys % [:?a :?v]) results2))
-           #{{:?a :person/name :?v "Luke"}
-             {:?a :person/age :?v 32}
-             {:?a :person/id :?v 42}}))))
+  (testing "same transaction"
+    (let [s (api/transact-all base [{:person/id 42
+                                     :person/name "Luke"}
+                                    {:person/id 42
+                                     :person/age 32}])
+          results (cr/query s person-by-pid :?pid 42)]
+      (is (= 1 (count (set (map :?p results)))))
+      (is (= (set (map #(select-keys % [:?a :?v]) results))
+             #{{:?a :person/name :?v "Luke"}
+               {:?a :person/age :?v 32}
+               {:?a :person/id :?v 42}}))))
+  (testing "different transactions"
+    (let [s (api/transact-all base [{:person/id 42
+                                      :person/name "Luke"}]
+                                   [{:person/id 42
+                                     :person/age 32}])
+          results (cr/query s person-by-pid :?pid 42)]
+      (is (= 1 (count (set (map :?p results)))))
+      (is (= (set (map #(select-keys % [:?a :?v]) results))
+             #{{:?a :person/name :?v "Luke"}
+               {:?a :person/age :?v 32}
+               {:?a :person/id :?v 42}})))))
 
 (deftest no-duplicate-facts
   (let [s (api/transact-all base [{:person/id 42
@@ -105,6 +112,8 @@
                                  [{:person/id 42
                                   :person/name "Lukas"}])
         results (cr/query s person-by-pid :?pid 42)]
+    (println "results")
+    (pprint results)
     (is (= (set (map #(select-keys % [:?a :?v]) results))
            #{{:?a :person/name :?v "Lukas"}
              {:?a :person/id :?v 42}}))))
