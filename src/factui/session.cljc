@@ -54,6 +54,8 @@
     :db/cardinality :db.cardinality/one
     :db/valueType :db.type/boolean}])
 
+(def ^:dynamic *updates*)
+
 (deftype DatomicListener []
   l/IPersistentEventListener
   (to-transient [listener] listener)
@@ -67,20 +69,20 @@
   (right-retract! [listener node elements]
     listener)
   (insert-facts! [listener facts]
-    ;(println "l:insert" facts)
+    (swap! *updates* conj [:insert facts])
     listener)
   (alpha-activate! [listener node facts]
     listener)
   (insert-facts-logical! [listener node token facts]
-   ; (println "l:insert logical" facts)
+    (swap! *updates* conj [:insert facts])
     listener)
   (retract-facts! [listener facts]
-   ; (println "l:retract" facts)
+    (swap! *updates* conj [:retract facts])
     listener)
   (alpha-retract! [listener node facts]
     listener)
   (retract-facts-logical! [listener node token facts]
-   ; (println "l:retract logical" facts)
+    (swap! *updates* conj [:retract facts])
     listener)
   (add-accum-reduced! [listener node join-bindings result fact-bindings]
     listener)
@@ -205,10 +207,21 @@
           session (if (empty? datoms)
                     session
                     (eng/insert session datoms))
-          session (assoc session :identities identities)
-          session (update session :store store/insert datoms)]
+          session (assoc session :identities identities)]
       [session bindings])))
 
+(defn- update-store
+  "Update the session's datom store with all the datoms that were recently
+   added and retracted."
+  [session updates]
+  (update session :store
+    (fn [store]
+      (reduce (fn [store [type datoms]]
+                (case type
+                  :insert (store/insert store datoms)
+                  :retract (store/retract store datoms)))
+        store
+        updates))))
 
 (defn session
   "Create a new Datom Session with the specified schema txdata"
@@ -224,40 +237,13 @@
     Returns a tuple of the new session and a map of tempids to resulting
     entity IDs."
   [session operations]
-  (let [ops-by-type (group-by first operations)
-        ;;TODO: support ops other than :db/add and :db/retraction here
-        insertions (map datom (:db/add ops-by-type))
-        retractions (map datom (:db/retract ops-by-type))
-        [session bindings] (insert-datoms session insertions)
-        session (retract-datoms session retractions)
-        session (eng/fire-rules session)]
-    [session bindings]))
-
-(comment
-
-  (def schema [{:db/ident :person/name
-                :db/valueType :db.type/string
-                :db/cardinality :db.cardinality/one}
-               {:db/ident :person/likes
-                :db/valueType :db.type/string
-                :db/cardinality :db.cardinality/many}
-               {:db/ident :person/id
-                :db/valueType :db.type/long
-                :db/cardinality :db.cardinality/one
-                :db/unique :db.unique/identity}])
-
-
-  (cr/defsession base 'factui.session)
-  (def s (session base schema))
-
-  (def r (transact s (txdata/txdata [{:person/id 42
-                                :person/name "luke"
-                                :person/likes #{"beer" "meat"}}
-                               {:person/id 43
-                                :person/likes #{"cheese"}}
-                               ])))
-
-
-  (pprint r)
-
-  )
+  (binding [*store* (atom [])]
+    (let [ops-by-type (group-by first operations)
+          ;;TODO: support ops other than :db/add and :db/retraction here
+          insertions (map datom (:db/add ops-by-type))
+          retractions (map datom (:db/retract ops-by-type))
+          [session bindings] (insert-datoms session insertions)
+          session (retract-datoms session retractions)
+          session (eng/fire-rules session)
+          session (update-store session *updates*)]
+      [session bindings])))

@@ -119,12 +119,17 @@
             {:?a :person/likes :?v "spinach"}}))))
 
 (deftest duplicate-entailed-facts
-  (testing "explicit after implied"
+  (testing "implied followed by explicit"
     (let [s (api/transact-all base [{:person/id 42
                                      :person/name "Popeye"}]
                                    [{:person/id 42
                                      :person/likes "spinach"}])
           results (cr/query s person-by-pid :?pid 42)]
       (is (= 3 (count results)))))
-
-  )
+  (testing "explicit followed by implied"
+    (let [s (api/transact-all base [{:person/id 42
+                                     :person/lies "spinach"}]
+                                   [{:person/id 42
+                                     :person/name "Popeye"}])
+          results (cr/query s person-by-pid :?pid 42)]
+      (is (= 3 (count results))))))
