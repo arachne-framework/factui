@@ -1,86 +1,35 @@
 (ns factui.api
   (:require [factui.txdata :as txdata]
-            #?(:clj [factui.rules :as r]
-               :cljs [factui.rules :as r :include-macros true])
-            [factui.facts :as f]
+            [factui.session :as session]
             [factui.compiler :as comp]
             #?(:clj [clara.rules :as cr]
                :cljs [clara.rules :as cr :include-macros true])
             [clojure.spec.alpha :as s]
             [clojure.string :as str]))
 
-(def ^:no-doc bootstrap-schema
-  "Initial schema for the FactUI fact base"
-  [{:db/ident :db/valueType
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/keyword}
-   {:db/ident :db/unique
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/keyword}
-   {:db/ident :db/ident
-    :db/cardinality :db.cardinality/one
-    :db/unique :db.unique/identity
-    :db/valueType :db.type/keyword}
-   {:db/ident :db/cardinality
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/keyword}
-   {:db/ident :db/cardinality
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/keyword}
-   {:db/ident :db/doc
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/string}
-   {:db/ident :db/doc
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/string}
-   {:db/ident :db/isComponent
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/boolean}
-   ;; Compatibility purposes only
-   {:db/ident :db/index
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/boolean}
-   {:db/ident :db/fulltext
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/boolean}
-   {:db/ident :db/noHistory
-    :db/cardinality :db.cardinality/one
-    :db/valueType :db.type/boolean}])
-
 #?(:clj
    (defmacro defsession
-     "Wrapper for Clara's `defsession`. Takes any number of namespaces names.
-      Rules and queries will be loaded for those namespaces."
-     [name & nses]
-     (let [original-name (gensym)
-           body `(do
-                   (cr/defsession ~original-name 'factui.rules ~@nses
-                     :fact-type-fn f/type
-                     :ancestors-fn f/ancestors)
-                   (binding [r/*bootstrap* true]
-                     (def ~name
-                       (first (transact ~original-name bootstrap-schema)))))]
-       body)))
+     "Wrapper for Clara's `defsession`. Arguments should resolve to:
 
-#?(:cljs (defn now []
-           (.getTime (js/Date.))))
+      1. The name of the session,
+      2. A collection of namespace names (from which Clara rules and queries
+         will be loaded)
+      3. A collection of Datomic-style schema entity maps."
+     [name nses schema]
+     (let [original-name (gensym)]
+       `(do
+          (cr/defsession ~original-name ~@nses)
+          (def ~name (session/session ~original-name ~schema))))))
 
-#?(:clj (defn now []
-          (System/currentTimeMillis)))
+(defn now []
+  #?(:cljs (.getTime (js/Date.))
+     :clj (System/currentTimeMillis)))
 
 (defn transact
   "Add Datomic-style transaction data to the session, returning a tuple of the
    new session and a map of the tempid bindings."
   [session txdata]
-  (binding [r/*tempid-bindings* (atom {})]
-    (let [facts (txdata/txdata txdata)
-          start (now)
-          new-session (cr/fire-rules (cr/insert-all session facts))
-          end (now)
-          elapsed (- end start)
-          ms-per-fact (/ elapsed (double (count facts)))]
-      (println "...transacted" (count facts) "in" elapsed "ms, for" ms-per-fact "ms per fact.")
-      [new-session @r/*tempid-bindings*])))
+  (session/transact session (txdata/txdata txdata)))
 
 (defn transact-all
   "Apply multiple transactions sequentially, returning the updated session."
@@ -89,7 +38,25 @@
             (first (transact s tx)))
     session txes))
 
-#?(:clj
+(defn transact!
+  "Insert facts within the body of a rule."
+  [facts]
+  (cr/insert-all! facts))
+
+(defn transact-unconditiona!
+  "Insert facts within the body of a rule, with no truth maintenance (that is,
+   the consequence of the rule will never be retracted, even if the conditions
+   become false.)"
+  [facts]
+  (cr/insert-all-unconditional! facts))
+
+(defn retract!
+  "Retracts facts within the body of a rule. Note that retractions do not
+   track truth maintenance."
+  [facts]
+  (apply cr/retract! facts))
+
+#_#?(:clj
    (defmacro defquery
      [name argvec query]
      `(cr/defquery ~name ~argvec

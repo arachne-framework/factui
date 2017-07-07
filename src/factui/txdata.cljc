@@ -66,14 +66,9 @@
     :list [(s/unform ::list txitem)]
     :map (second (map->lists txitem))))
 
-(defn to-fact
-  "Convert a Datomic operation to an Operation fact"
-  [[op & args]]
-  (f/->Operation op args))
-
 (defn txdata
-  "Given Datomic-style txdata, convert to a set of FactUI Datom records
-   (suitable for use with Clara)
+  "Given Datomic-style txdata, convert to a set of :db/add or :db/retract
+   tuples.
 
    If an entity ID is a positive integer, it is presumed to be a concrete
    entity ID, otherwise it will be treated as a tempid."
@@ -81,5 +76,4 @@
   (let [conformed (s/conform ::txdata txdata)]
     (when (= ::s/invalid conformed) (s/assert* ::txdata txdata))
     (->> conformed
-      (mapcat to-list)
-      (map to-fact))))
+      (mapcat to-list))))
