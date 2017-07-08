@@ -61,7 +61,8 @@
     (let [{datoms true, other-facts false} (group-by datom? facts)
           resolved (store/resolve store datoms)
           [insert-datoms retract-datoms bindings] resolved]
-      (when (bound? #'*bindings*) (swap! *bindings* merge bindings))
+      (when #?(:clj (bound? #'*bindings*)
+               :cljs *bindings*) (swap! *bindings* merge bindings))
       (binding [*store* (atom store)]
         (DatomSession. (-> delegate
                          (eng/retract retract-datoms)
