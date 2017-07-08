@@ -1,6 +1,5 @@
 (ns factui.api
-  (:require [factui.txdata :as txdata]
-            [factui.session :as session]
+  (:require [factui.session :as session]
             [factui.compiler :as comp]
             #?(:clj [clara.rules :as cr]
                :cljs [clara.rules :as cr :include-macros true])
@@ -29,7 +28,7 @@
   "Add Datomic-style transaction data to the session, returning a tuple of the
    new session and a map of the tempid bindings."
   [session txdata]
-  (session/transact session (txdata/txdata txdata)))
+  (session/transact session txdata))
 
 (defn transact-all
   "Apply multiple transactions sequentially, returning the updated session."
@@ -39,22 +38,16 @@
     session txes))
 
 (defn transact!
-  "Insert facts within the body of a rule."
-  [facts]
-  (cr/insert-all! facts))
+  "Transact data in the consequence of a rule. Truth maintance will not be
+   performed."
+  [txdata]
+  (session/transact! txdata false))
 
-(defn transact-unconditiona!
-  "Insert facts within the body of a rule, with no truth maintenance (that is,
-   the consequence of the rule will never be retracted, even if the conditions
-   become false.)"
-  [facts]
-  (cr/insert-all-unconditional! facts))
-
-(defn retract!
-  "Retracts facts within the body of a rule. Note that retractions do not
-   track truth maintenance."
-  [facts]
-  (apply cr/retract! facts))
+(defn transact-logical!
+  "Transact data in the consequence of a rule. Truth maintenance will be
+   perfomed (with associated caveats.)"
+  [txdata]
+  (session/transact! txdata true))
 
 #_#?(:clj
    (defmacro defquery

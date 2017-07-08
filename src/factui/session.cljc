@@ -3,18 +3,9 @@
   (:require [clara.rules :as cr]
             [clara.rules.engine :as eng]
             [clara.rules.listener :as l]
+            [factui.txdata :as txdata]
             [factui.facts :as f]
             [factui.store :as store]))
-
-;; Tempid Resolution  ; DONE
-;; - free
-;; - constrained by identity attr
-;;   - by existing datoms
-;;   - by datoms in same tx
-
-;; Prevent duplicate datoms ; DONE
-;; Enforce cardinality one  ; DONE
-;; Enforce schema           ; TODO
 
 ;; Bound in a transaction context
 (def ^:dynamic *store*)
@@ -32,20 +23,20 @@
   (right-retract! [listener node elements]
     listener)
   (insert-facts! [listener facts]
-
+    (swap! *store* store/update facts [])
     listener)
   (alpha-activate! [listener node facts]
     listener)
   (insert-facts-logical! [listener node token facts]
-
+    (swap! *store* store/update facts [])
     listener)
   (retract-facts! [listener facts]
-
+    (swap! *store* store/update [] facts)
     listener)
   (alpha-retract! [listener node facts]
     listener)
   (retract-facts-logical! [listener node token facts]
-
+    (swap! *store* store/update [] facts)
     listener)
   (add-accum-reduced! [listener node join-bindings result fact-bindings]
     listener)
@@ -91,35 +82,40 @@
   (let [components (update (eng/components base) :listeners conj (DatomListener.))]
     (DatomSession. (eng/assemble components) (store/store schema-txdata))))
 
+(defn- prep-txdata
+  "Given Datomic txdata, return a tuple of [insert-datoms retract datoms]"
+  [txdata]
+  (let [ops (txdata/txdata txdata)
+        ;;TODO: support ops other than :db/add and :db/retract
+        ops-by-type (group-by first ops)
+        insertions (map datom (:db/add ops-by-type))
+        retractions (map datom (:db/retract ops-by-type))]
+    [insertions retractions]))
+
 (defn transact
   "Given a sequence of Datomic-style operations, transact them as Datom facts
    to a DatomSession, and fire off a round of rules.
 
     Returns a tuple of the new session and a map of tempids to resulting
     entity IDs."
-  [session operations]
-  (let [ops-by-type (group-by first operations)
-        ;;TODO: support ops other than :db/add and :db/retraction here
-        insertions (map datom (:db/add ops-by-type))
-        retractions (map datom (:db/retract ops-by-type))
-        store (:store session)
-        [store insert-facts retract-facts bindings] (store/insert store insertions)
-        store (store/retract store retractions)]
+  [session txdata]
+  (let [store (:store session)
+        [insertions retractions] (prep-txdata txdata)
+        [insert-datoms retract-datoms bindings] (store/resolve store insertions)]
     (binding [*store* (atom store)]
-      (let [session (-> session
-                      (eng/insert facts)
-                      (eng/fire-rules))
-            session (assoc session :store @*store*)]
-        [session bindings]))))
+      (let [new-session (-> session
+                          (eng/retract retractions)
+                          (eng/retract retract-datoms)
+                          (eng/insert insert-datoms)
+                          (eng/fire-rules)
+                          (assoc :store @*store*))]
+        [new-session bindings]))))
 
-;; Question: should I be *listening* to actually update the index, as opposed to updating it as soon as I know I am "going to"?
-
-;; I think so. Store/insert, as used, should only be used for tempid resolution.
-
-;; Updating the index is a completely separate task and should be strictly from *observing* (via the listener).
-
-;; Thus, we can decouple the tempid-resolution (to get concrete datoms) from updating the index.
-
-;;This works as long as we don't do multiple writes without an actual insert or firing rules. But that's always true when using "transact".
-
-
+(defn transact!
+  "Function to add data, from the body of a rule."
+  [txdata logical?]
+  (let [store @*store*
+        [insertions retractions] (prep-txdata txdata)
+        [insert-datoms retract-datoms _] (store/resolve store insertions)]
+    (eng/retract-facts! retract-datoms)
+    (eng/insert-facts! insert-datoms (not logical?))))

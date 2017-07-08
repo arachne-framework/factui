@@ -1,12 +1,22 @@
 (ns factui.store
   "A datom store. For storing datoms."
-  (:require [factui.facts :as f]))
+  (:require [factui.facts :as f]
+            #?(:cljs [cljs.core :as c]
+               :clj [clojure.core :as c]))
+  (:refer-clojure :exclude [update resolve]))
 
 (defprotocol Store
-  (insert [this datoms]
-    "Insert the datoms into the store, returning a 4-tuple of the updated store, facts to insert, facts to retract, and the tempid bindings.")
-  (retract [this datoms]
-    "Retract the specified datoms from the store, returning the updated store."))
+  (update [this insert-datoms retract-datoms]
+    "Update the store by inserting and retracting the specified concrete datoms (such as those returned by `resolve`).")
+  (resolve [this datoms]
+    "Given a seq of datoms (which may contain temporary IDs), resolve against
+    the existing contents of the store to return a 3-tuple of:
+
+    1. concrete tuples to add
+    2. concrete tuples to remove
+    3. map of tempid to concrete EIDs
+
+    This handles all Datomic-style semantics such as upsert, tempid resolution, and preventing duplicates"))
 
 (def ^:no-doc base-schema
   "Initial built-in schema"
@@ -53,7 +63,7 @@
    nil/empty, and the entire entity if it has no attrs."
   [m e a]
   (if (empty? (get-in m [e a]))
-    (let [m (update m e dissoc a)]
+    (let [m (c/update m e dissoc a)]
       (if (empty? (get m e))
         (dissoc m e)
         m))
@@ -109,61 +119,68 @@
                  (:index store)
                  datoms)))
 
-(defn- find-identity
-  "Given a store and a set of datoms with the same eid, return a [attr value]
-   identity for the datom set, if present."
-  [store datoms]
-  (first (keep (fn [datom]
-                 (let [a (.-a datom)]
-                   ()
-                   (when (identity? store a)
-                     [a (.-v datom)])))
-           datoms)))
+(defn- datom-identity
+  "If a datom expresses an identity, return the tuple [[a v] e], otherwise nil"
+  [store {:keys [e a v]}]
+  (when (identity? store a)
+    [[a v] e]))
+
+(defn- update-identities
+  "Update the identities in the given data store to reflect inserted/retracted
+   datoms"
+  [store insert-datoms retract-datoms]
+  (let [to-insert (into {} (keep #(datom-identity store %) insert-datoms))
+        to-retract (into {} (keep #(datom-identity store %) retract-datoms))]
+    (assoc store :identities
+                 (let [identities (:identities store)
+                       identities (apply dissoc identities (keys to-retract))
+                       identities (merge identities to-insert)]
+                   identities))))
 
 (let [eid (atom 10000)]
   (defn- new-eid []
     (swap! eid inc)))
 
-(defn- assign-eid
-  "Given a seq of datoms, set the e of each datom to the specified value"
-  [datoms e]
-  (map (fn [d] (assoc d :e e)) datoms))
-
 (defn- resolve-tempids
-  "Given a set of datoms which may contain temporary IDs, assign appropriate
-   tempids following Datomic datalog semantics.
+  "Given a set of datoms (which may contain temporary IDs), return a tuple of
+   concrete datoms (with tempids swapped for concrete entity IDs)
 
-   Returns a 3tuple of the updated store and concrete datoms."
+   Returns a tuple of a set of concrete datoms, and the tempid bindings"
   [store datoms]
-  (reduce (fn [[store result-datoms bindings] [tid datoms]]
-            (if (pos-int? tid)
-              [store bindings (into result-datoms datoms)]
-              (let [identity (find-identity store datoms)
-                    existing-eid (when identity
-                                   (get-in store [:identities identity]))
-                    eid (or existing-eid (new-eid))
-                    new-store (cond
-                                 (not identity) store
-                                 existing-eid store
-                                 :else (assoc-in store [:identities identity]
-                                         eid))
-                    new-bindings (assoc bindings tid eid)
-                    new-datoms (into result-datoms (assign-eid datoms eid))]
-                [new-store new-datoms new-bindings])))
-    [store #{} {}]
-    (group-by (fn [d] (.-e d)) datoms)))
+  (let [tx-ids (keep #(datom-identity store %) datoms)
+        tid->id (into {} (map (fn [[id tid]] [tid id]) tx-ids))
+        id->eid (reduce (fn [m id]
+                          (if (get m id)
+                            m
+                            (let [eid (get (:identities store) id (new-eid))]
+                              (assoc m id eid))))
+                          {}
+                  (vals tid->id))]
+    (reduce (fn [[datoms bindings] {:keys [e a v] :as datom}]
+              (if (pos-int? e)
+                [(conj datoms (f/->Datom e a v)) bindings]
+                (if-let [eid (get bindings e)]
+                  [(conj datoms (f/->Datom eid a v)) bindings]
+                  (let [id (get tid->id e)
+                        eid (if id (id->eid id) (new-eid))]
+                    [(conj datoms (f/->Datom eid a v)) (assoc bindings e eid)]))))
+      [#{} {}]
+      datoms)))
+
 
 (defrecord SimpleStore [schema index identities card-one-attrs identity-attrs]
   Store
-  (insert [store datoms]
-    (let [[store datoms bindings] (resolve-tempids store datoms)
+  (resolve [store datoms]
+    (let [[datoms bindings] (resolve-tempids store datoms)
           datoms (filter #(not (has? store %)) datoms)
-          retractions (keep #(replaces store %) datoms)
-          store (index-retractions store datoms)
-          store (index-insertions store datoms)]
-      [store datoms retractions bindings]))
-  (retract [store datoms]
-    (index-retractions store datoms)))
+          retractions (keep #(replaces store %) datoms)]
+      [datoms retractions bindings]))
+
+  (update [store insert-datoms retract-datoms]
+    (let [store (index-retractions store retract-datoms)
+          store (index-insertions store insert-datoms)
+          store (update-identities store insert-datoms retract-datoms)]
+      store)))
 
 (defn- build-schema
   "Given txdata in entity map format, return a schema map"
