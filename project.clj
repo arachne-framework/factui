@@ -34,7 +34,7 @@
                                           :source-paths ["src" "dev" "test"]
                                           :compiler {:main factui.bench
                                                      :externs ["resources/phantomjs-externs.js"]
-                                                     :optimizations :whitespace
+                                                     :optimizations :advanced
                                                      :output-to "target/test-bench.js"
                                                      :cache-analysis false}}]}
                     :aliases {"test-clj" ["run" "-m" "factui.test-runner"]

@@ -1,22 +1,21 @@
 (ns factui.bench
   (:require
     [factui.api :as api :include-macros true]
-           [factui.facts :as f]
-    [clara.rules :as cr :include-macros true]
-    [factui.rules :as r :include-macros true]
+    [factui.facts :as f]
     [clojure.pprint :refer [pprint]]
-    [clara.rules.memory :as mem]
-    [clara.tools.tracing :as ct]
-    [cljs.pprint :refer [pprint]]
-    ))
+    #?(:clj [clojure.pprint :refer [pprint]]
+       :cljs [cljs.pprint :refer [pprint]])))
 
-(enable-console-print!)
+#?(:cljs (enable-console-print!))
 
 (defn now []
-  (.getTime (js/Date.)))
+  #?(:cljs (.getTime (js/Date.))
+     :clj (System/currentTimeMillis)))
 
 (defn rand-date []
-  (js/Date. (- (now) (* 1000 60 60 24 365 (inc (rand-int 100))))))
+  (let [ts (- (now) (* 1000 60 60 24 365 (inc (rand-int 100))))]
+    #?(:cljs (js/Date. ts)
+       :clj (java.util.Date. ts))))
 
 (def schema
   [{:db/ident :person/id
@@ -72,17 +71,23 @@
    :book/title (rand-string)
    :book/subject (repeatedly (inc (rand-int 5)) rand-string)})
 
-(api/defsession base* 'factui.bench)
+(api/defsession base ['factui.bench] schema)
 
-(def base (api/transact-all base* schema))
+(def num-people 50)
+(def num-books 50)
 
-(def num-people 20)
+(defn count-thing [d]
+  (cond
+    (map? d) (reduce + 1 (map count-thing (vals d)))
+    (coll? d) (reduce + 0 (map count-thing d))
+    :else 1))
 
-(def num-books 0)
+(defn estimate-datoms
+  "Estimate the number of datoms in the given txdata"
+  [txdata]
+  (reduce + 0 (map count-thing txdata)))
 
-(println "Generating txdata...")
-
-(def txdata
+(defn gen-data []
   (doall
     (concat
       (for [pid (range 0 num-people)]
@@ -90,26 +95,25 @@
       (for [pid (range 0 num-books)]
         (rand-book pid)))))
 
-(println "Warming up....")
+(defn time-per-datom [num-datoms f]
+  (let [start (now)]
+    (f)
+    (let [stop (now)
+           elapsed (- stop start)
+           by-datom (* 1.0 (/ elapsed num-datoms))]
+       (println "Did" num-datoms "in" elapsed "ms, for" by-datom "ms per datom"))))
 
-(dotimes [n 5]
-  (api/transact-all base txdata))
+(defn -main [& _]
+  (let [txdata (gen-data)
+        n (estimate-datoms txdata)
+        f #(api/transact base txdata)]
+    (println "Generated about" n "datoms")
+    (println "Warming up....")
+    (dotimes [i 100] (f))
+    (println "Benchmarking...")
+    (time-per-datom n f)))
 
-(println "Benchmarking...")
-(println "(There are" (count txdata) "entities)")
-
-(time
-  (api/transact-all base txdata))
-
-
-(def tracing-session (ct/with-tracing base))
-
-(println "Trace:")
-(pprint (ct/get-trace (api/transact-all tracing-session [{:book/id 42
-                                                          :book/title "My Book"}])))
-
-(println "version:" (.-appVersion js/navigator))
-
-
-(.exit js/phantom)
-
+;; Run tests at the root level, in CLJS
+#?(:cljs
+   (do (-main)
+       (.exit js/phantom)))
