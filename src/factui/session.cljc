@@ -12,6 +12,8 @@
 (def ^:dynamic *store*)
 (def ^:dynamic *bindings*)
 
+(defn datom? [fact] (instance? Datom fact))
+
 (deftype DatomListener []
   l/IPersistentEventListener
   (to-transient [listener] listener)
@@ -52,8 +54,6 @@
     listener)
   (to-persistent! [listener]
     listener))
-
-(defn datom? [fact] (instance? Datom fact))
 
 (defrecord DatomSession [delegate store]
   eng/ISession

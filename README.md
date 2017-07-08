@@ -17,7 +17,7 @@ FactUI gives its own answers, answers which resolve a number of particularly dif
 
 ## Usage
 
-
+TODO
 
 ## Credits
 
@@ -30,6 +30,12 @@ Also thanks to [Ryan Brush](https://github.com/rbrush) and the rest of the [Clar
 Q. OMG it's full of macros. WHY!?
 A. That's why it's fast. The ClojureScript version of Clara uses macros to build its RETE network at compile-time, so anything built on top of Clara needs to use macros as well.
 
-Q. Can I dynamically generate rules!?
-A. No. Put down the pipe and embrace the fact that UI applications have to stop being abstract, at some point.
+Q. Will I run into performance issues?
+A. Maybe. It depends on what rules you write, and how complex the queries for your components are. FactUI easily supports tens of thousands of facts and thousands of simple rules and components. But it's certainly possible to write just a few complex rules, or rules that interact in unexpected ways, which will cause your performance to tank.
+
+Q. The library seems a little bit memory-hungry...
+A. Yup, it sure is. Sorry. The RETE algorithm fundamentally works by trading of memory usage to increase speed. Know your limits, do some benchmarks.
+
+Q. Can I dynamically generate rules!?!!
+A. No. Put down the pipe and embrace the fact that UI applications have to stop being abstract at some point.
 
