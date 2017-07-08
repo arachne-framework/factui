@@ -4,11 +4,13 @@
             [clara.rules.engine :as eng]
             [clara.rules.listener :as l]
             [factui.txdata :as txdata]
-            [factui.facts :as f]
-            [factui.store :as store]))
+            #?(:clj [factui.facts :as f]
+               :cljs [factui.facts :as f :refer [Datom]])
+            [factui.store :as store])
+  #?(:clj (:import [factui.facts Datom])))
 
-;; Bound in a transaction context
 (def ^:dynamic *store*)
+(def ^:dynamic *bindings*)
 
 (deftype DatomListener []
   l/IPersistentEventListener
@@ -23,20 +25,20 @@
   (right-retract! [listener node elements]
     listener)
   (insert-facts! [listener facts]
-    (swap! *store* store/update facts [])
+    (swap! *store* store/update (filter datom? facts) [])
     listener)
   (alpha-activate! [listener node facts]
     listener)
   (insert-facts-logical! [listener node token facts]
-    (swap! *store* store/update facts [])
+    (swap! *store* store/update (filter datom? facts) [])
     listener)
   (retract-facts! [listener facts]
-    (swap! *store* store/update [] facts)
+    (swap! *store* store/update [] (filter datom? facts))
     listener)
   (alpha-retract! [listener node facts]
     listener)
   (retract-facts-logical! [listener node token facts]
-    (swap! *store* store/update [] facts)
+    (swap! *store* store/update [] (filter datom? facts))
     listener)
   (add-accum-reduced! [listener node join-bindings result fact-bindings]
     listener)
@@ -51,19 +53,33 @@
   (to-persistent! [listener]
     listener))
 
+(defn datom? [fact] (instance? Datom fact))
+
 (defrecord DatomSession [delegate store]
   eng/ISession
-  (insert [session datoms]
-    (DatomSession. (eng/insert delegate datoms) store))
+  (insert [session facts]
+    (let [{datoms true, other-facts false} (group-by datom? facts)
+          resolved (store/resolve store datoms)
+          [insert-datoms retract-datoms bindings] resolved]
+      (when (bound? #'*bindings*) (swap! *bindings* merge bindings))
+      (binding [*store* (atom store)]
+        (DatomSession. (-> delegate
+                         (eng/retract retract-datoms)
+                         (eng/insert insert-datoms)
+                         (eng/insert other-facts))
+          @*store*))))
 
-  (retract [session datoms]
-    (DatomSession. (eng/retract delegate datoms) store))
+  (retract [session facts]
+    (binding [*store* (atom store)]
+      (DatomSession. (eng/retract delegate facts) @*store*)))
 
   (fire-rules [session]
-    (DatomSession. (eng/fire-rules delegate) store))
+    (binding [*store* (atom store)]
+      (DatomSession. (eng/fire-rules delegate) @*store*)))
 
   (fire-rules [session opts]
-    (DatomSession. (eng/fire-rules delegate opts) store))
+    (binding [*store* (atom store)]
+      (DatomSession. (eng/fire-rules delegate opts) @*store*)))
 
   (query [session query params]
     (eng/query delegate query params))
@@ -93,23 +109,18 @@
     [insertions retractions]))
 
 (defn transact
-  "Given a sequence of Datomic-style operations, transact them as Datom facts
-   to a DatomSession, and fire off a round of rules.
+  "Given Datomic-style txdata, transact it to the session.
 
-    Returns a tuple of the new session and a map of tempids to resulting
-    entity IDs."
+   Returns a tuple of the new session and a map of tempids to resulting entity
+   IDs."
   [session txdata]
-  (let [store (:store session)
-        [insertions retractions] (prep-txdata txdata)
-        [insert-datoms retract-datoms bindings] (store/resolve store insertions)]
-    (binding [*store* (atom store)]
-      (let [new-session (-> session
-                          (eng/retract retractions)
-                          (eng/retract retract-datoms)
-                          (eng/insert insert-datoms)
-                          (eng/fire-rules)
-                          (assoc :store @*store*))]
-        [new-session bindings]))))
+  (binding [*bindings* (atom {})]
+    (let [[insertions retractions] (prep-txdata txdata)
+          new-session (-> session
+                        (eng/retract retractions)
+                        (eng/insert insertions)
+                        (eng/fire-rules))]
+      [new-session @*bindings*])))
 
 (defn transact!
   "Function to add data, from the body of a rule."

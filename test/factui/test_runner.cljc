@@ -1,5 +1,5 @@
 (ns factui.test-runner
-  (:require [factui.api-test]
+  (:require [factui.session-test]
             #?(:clj [clojure.test :refer [deftest is are run-tests]]
                :cljs [cljs.test :refer-macros [deftest is are run-tests]])))
 

@@ -49,11 +49,6 @@
   [txdata]
   (session/transact! txdata true))
 
-#_#?(:clj
-   (defmacro defquery
-     [name argvec query]
-     `(cr/defquery ~name ~argvec
-        ~@(comp/compile query))))
 
 ;; TODO: Test which of the following approaches is the most efficient:
 ;; 1. A Clara query, polled repeatedly

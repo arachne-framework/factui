@@ -51,6 +51,14 @@
   (api/transact-logical! [{:db/id ?e
                            :person/likes "tea"}]))
 
+(defrecord PersonRecord [id name])
+
+(cr/defrule entities-from-records
+  [?pr <- PersonRecord]
+  =>
+  (cr/insert! (f/->Datom -99 :person/id (:id ?pr))
+              (f/->Datom -99 :person/name (:name ?pr))))
+
 #?(:cljs (enable-console-print!))
 
 (api/defsession base ['factui.session-test] test-schema)
@@ -64,13 +72,14 @@
             {:?a :person/id :?v 42}}))))
 
 (deftest tempids-resolve-to-same-entity
-  (let [s (api/transact-all base [{:db/id -47
-                                   :person/name "Luke"}
-                                  {:db/id -47
-                                   :person/id 42
-                                   :person/age 32}])
-
-        results (cr/query s person-by-pid :?pid 42)]
+  (let [[s bindings] (api/transact base [{:db/id -47
+                                          :person/name "Luke"}
+                                         {:db/id -47
+                                          :person/id 42
+                                          :person/age 32}])
+        results (cr/query s person-by-pid :?pid 42)
+        eid (bindings -47)]
+    (is (every? #(= eid (:?p %)) results))
     (is (= (set (map #(select-keys % [:?a :?v]) results))
           #{{:?a :person/name :?v "Luke"}
             {:?a :person/age :?v 32}
@@ -195,6 +204,26 @@
             #{{:?a :person/name :?v "Picard"}
               {:?a :person/id :?v 42}
               {:?a :person/likes :?v "tea"}})))))
+
+(deftest non-datom-facts
+  (let [s (cr/insert base (->PersonRecord 69 "Alex"))
+        s (cr/fire-rules s)
+        results (cr/query s person-by-pid :?pid 69)]
+    (is (= (set (map #(select-keys % [:?a :?v]) results))
+          #{{:?a :person/name :?v "Alex"}
+            {:?a :person/id :?v 69}}))
+    (testing "duplicate prevention"
+      (let [s (api/transact-all s [{:person/id 69
+                                    :person/name "Alex"}])
+            results (cr/query s person-by-pid :?pid 69)]
+        (is (= 2 (count (set results))))))
+    (testing "overwriting card-one"
+      (let [s (api/transact-all s [{:person/id 69
+                                    :person/name "Alejandro"}])
+            results (cr/query s person-by-pid :?pid 69)]
+        (is (= (set (map #(select-keys % [:?a :?v]) results))
+              #{{:?a :person/name :?v "Alejandro"}
+                {:?a :person/id :?v 69}}))))))
 
   ; Known problematic scenario:
   ;
