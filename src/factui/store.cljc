@@ -1,9 +1,11 @@
 (ns factui.store
   "A datom store. For storing datoms."
-  (:require [factui.facts :as f]
+  (:require #?(:cljs [factui.facts :as f :refer [Datom]]
+               :clj [factui.facts :as f])
             #?(:cljs [cljs.core :as c]
                :clj [clojure.core :as c]))
-  (:refer-clojure :exclude [update resolve]))
+  (:refer-clojure :exclude [update resolve])
+  #?(:clj (:import [factui.facts Datom])))
 
 (defprotocol Store
   (update [this insert-datoms retract-datoms]
@@ -16,7 +18,8 @@
     2. concrete tuples to remove
     3. map of tempid to concrete EIDs
 
-    This handles all Datomic-style semantics such as upsert, tempid resolution, and preventing duplicates"))
+    This handles all Datomic-style semantics such as upsert, tempid resolution, and preventing duplicates")
+  (schema [this] "Returns a map of {attr attributes} for the store's schema."))
 
 (def ^:no-doc base-schema
   "Initial built-in schema"
@@ -225,7 +228,8 @@
     (let [store (index-retractions store retract-datoms)
           store (index-insertions store insert-datoms)
           store (update-identities store insert-datoms retract-datoms)]
-      store)))
+      store))
+  (schema [store] schema))
 
 (defn- build-schema
   "Given txdata in entity map format, return a schema map"
@@ -234,7 +238,7 @@
     (filter :db/valueType)
     (map (fn [txmap]
            [(:db/ident txmap)
-            (select-keys txmap [:db/cardinality :db/unique :db/valueType])]))
+            (select-keys txmap [:db/cardinality :db/unique :db/valueType :factui/transient])]))
     (into {})))
 
 (defn- attrs-with
@@ -260,3 +264,23 @@
 ;; Pass around the store, updating it and using it to filter whenever anythign is changed.
 ;;   explicit/logical insertion
 ;;   explicit/logical retraction
+
+(defn fact-type-fn
+  "Given a store, return a function that will return the type of a fact"
+  [store]
+  (fn [fact]
+    (let [t (type fact)]
+      (if (= Datom t)
+        (.-a fact)
+        t))))
+
+(defn ancestors-fn
+  "Given a store, return a function that will return the ancestors of a type"
+  [store]
+  ancestors
+  (let [h (make-hierarchy)]
+    (fn [type]
+      (if (keyword? type)
+        [Datom]
+        (ancestors type)))))
+

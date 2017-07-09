@@ -31,25 +31,25 @@
 
 (cr/defquery person-by-pid
   [:?pid]
-  [Datom (= e ?p) (= a :person/id) (= v ?pid)]
+  [:person/id [{:keys [e v]}] (= e ?p) (= v ?pid)]
   [Datom (= e ?p) (= a ?a) (= v ?v)])
 
 (cr/defrule popeye-likes-spinach
-  [Datom (= e ?e) (= a :person/name) (= v "Popeye")]
+  [:person/name [{:keys [e v]}] (= e ?e) (= v "Popeye")]
   =>
   (api/transact! [{:db/id ?e
                    :person/likes "spinach"}]))
 
 (cr/defrule locutus-likes-assimilation
   ;; But only when he is Locutus
-  [Datom (= e ?e) (= a :person/name) (= v "Locutus")]
+  [:person/name [{:keys [e v]}] (= e ?e) (= v "Locutus")]
   =>
   (api/transact-logical! [{:db/id ?e
                            :person/likes "assimilation"}]))
 
 (cr/defrule picard-likes-tea
   ;; But only when he is Picard
-  [Datom (= e ?e) (= a :person/name) (= v "Picard")]
+  [:person/name [{:keys [e v]}] (= e ?e) (= v "Picard")]
   =>
   (api/transact-logical! [{:db/id ?e
                            :person/likes "tea"}]))

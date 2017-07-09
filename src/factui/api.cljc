@@ -1,24 +1,22 @@
 (ns factui.api
   (:require [factui.session :as session]
+            [factui.store :as store]
             [factui.compiler :as comp]
             #?(:clj [clara.rules :as cr]
                :cljs [clara.rules :as cr :include-macros true])
             [clojure.spec.alpha :as s]
             [clojure.string :as str]))
 
-#?(:clj
-   (defmacro defsession
-     "Wrapper for Clara's `defsession`. Arguments should resolve to:
-
-      1. The name of the session,
-      2. A collection of namespace names (from which Clara rules and queries
-         will be loaded)
-      3. A collection of Datomic-style schema entity maps."
-     [name nses schema]
-     (let [original-name (gensym)]
-       `(do
-          (cr/defsession ~original-name ~@nses)
-          (def ~name (session/session ~original-name ~schema))))))
+#?(:clj (defmacro defsession
+          "Define a new Datom session with the specified schema txdata"
+          [name nses schema-txdata]
+          (let [base (gensym)]
+            `(let [store# (store/store ~schema-txdata)]
+               (cr/defsession ~base ~@nses
+                 :fact-type-fn (store/fact-type-fn store#)
+                 :ancestors-fn (store/ancestors-fn store#)
+                 )
+               (def ~name (session/session ~base store#))))))
 
 (defn now []
   #?(:cljs (.getTime (js/Date.))

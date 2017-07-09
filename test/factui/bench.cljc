@@ -60,7 +60,11 @@
     :db/cardinality :db.cardinality/one}
    {:db/ident :book/topic
     :db/valueType :db.type/string
-    :db/cardinality :db.cardinality/many}])
+    :db/cardinality :db.cardinality/many}
+
+   {:db/ident :animal/name
+    :db/valueType :db.type/string
+    :db/cardinality :db.cardinality/one}])
 
 (defn rand-string
   []
@@ -73,6 +77,9 @@
   (into {} (filter (fn [[k v]]
                      (and v (or (not (coll? v))
                                 (not (empty? v))))) m)))
+
+(defn rand-animal []
+  {:animal/name (rand-string)})
 
 (defn rand-person
   [id people-range book-range]
@@ -96,6 +103,7 @@
 
 (def num-people 1000)
 (def num-books 100)
+(def num-animals 10000)
 
 (defn count-thing [d]
   (cond
@@ -113,6 +121,7 @@
         book-range (range 0 num-books)]
     (doall
       (concat
+        (repeatedly num-animals rand-animal)
         (for [pid people-range]
           (rand-person pid people-range book-range))
         (for [pid (range 0 num-books)]

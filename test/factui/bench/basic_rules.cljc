@@ -14,16 +14,16 @@
 
 (cr/defrule person-book-topics
   "If a person has read a book on a topic, they must like this topic (why not)"
-  [Datom (= e ?p) (= a :person/has-read) (= v ?b)]
-  [Datom (= e ?b) (= a :book/topic) (= v ?topic)]
+  [:person/has-read [{:keys [e v]}] (= e ?p) (= v ?b)]
+  [:book/topic [{:keys [e v]}] (= e ?b) (= v ?topic)]
   =>
-  (api/transact! {:db/id ?p
-                  :person/likes ?topic}))
+  (api/transact! [{:db/id ?p
+                   :person/likes ?topic}]))
 
 (cr/defrule people-make-friends-from-books
   "If two people have read the same book, they must be friends (wat)"
-  [Datom (= e ?p1) (= a :person/has-read) (= v ?b)]
-  [Datom (= e ?p2) (= a :person/has-read) (= v ?b)]
+  [:person/has-read [{:keys [e v]}] (= e ?p1) (= v ?b)]
+  [:person/has-read [{:keys [e v]}] (= e ?p2) (= v ?b)]
   [:test (not= ?p1 ?p2)]
   =>
   (api/transact! [{:db/id ?p1
@@ -31,25 +31,31 @@
 
 (cr/defrule friends-are-always-mutual
   "Friends are mutual"
-  [Datom (= e ?p1) (= a :person/friends) (= v ?p2)]
-  [:not [Datom (= e ?p2) (= a :person/friends) (= v ?p1)]]
+  [:person/friends [{:keys [e v]}] (= e ?p1) (= v ?p2)]
+  [:not [:person/friends [{:keys [e v]}] (= e ?p2) (= v ?p1)]]
   =>
-  (api/transact! {:db/id ?p2
-                  :person/friends ?p1}))
+  (api/transact! [{:db/id ?p2
+                   :person/friends ?p1}]))
 
 (cr/defquery person-by-id
   [:?pid]
-  [Datom (= e ?p) (= a :person/id) (= v ?pid)]
-  [Datom (= e ?p) (= a ?a) (= v ?v)])
+  [:person/id [{:keys [e v]}] (= e ?p) (= v ?pid)]
+  [:person/name [{:keys [e v]}] (= e ?p) (= v ?name)]
+  [:person/age [{:keys [e v]}] (= e ?p) (= v ?age)]
+  [:person/friends [{:keys [e v]}] (= e ?p) (= v ?friends)]
+  [:person/likes [{:keys [e v]}] (= e ?p) (= v ?likes)]
+  [:person/reading [{:keys [e v]}] (= e ?p) (= v ?reading)]
+  [:person/has-read [{:keys [e v]}] (= e ?p) (= v ?has-read)])
 
 (cr/defquery book-by-id
   [:?pid]
-  [Datom (= e ?p) (= a :book/id) (= v ?pid)]
-  [Datom (= e ?p) (= a ?a) (= v ?v)])
+  [:book/id [{:keys [e v]}] (= e ?p) (= v ?pid)]
+  [:book/title [{:keys [e v]}] (= e ?p) (= v ?title)]
+  [:book/topic [{:keys [e v]}] (= e ?p) (= v ?topic)])
 
 (cr/defquery person-friends
   []
-  [Datom (= e ?p) (= a :person/friends) (= v ?p2)])
+  [:person/friends [{:keys [e v]}] (= e ?p) (= v ?p2)])
 
 (cr/defquery dum-datoms
   []

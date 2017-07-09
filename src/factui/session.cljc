@@ -94,10 +94,10 @@
   (f/->Datom e a v))
 
 (defn session
-  "Create a new Datom Session with the specified schema txdata"
-  [base schema-txdata]
+  "Create a new Datom Session from the given underlying session and store."
+  [base store]
   (let [components (update (eng/components base) :listeners conj (DatomListener.))]
-    (DatomSession. (eng/assemble components) (store/store schema-txdata))))
+    (DatomSession. (eng/assemble components) store)))
 
 (defn- prep-txdata
   "Given Datomic txdata, return a tuple of [insert-datoms retract datoms]"
