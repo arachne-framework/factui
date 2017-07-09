@@ -94,8 +94,8 @@
 
 (api/defsession base ['factui.bench.basic-rules] schema)
 
-(def num-people 10)
-(def num-books 2)
+(def num-people 1000)
+(def num-books 100)
 
 (defn count-thing [d]
   (cond
@@ -126,13 +126,13 @@
            by-datom (* 1.0 (/ elapsed num-datoms))]
        (println "Did" num-datoms "in" elapsed "ms, for" by-datom "ms per datom"))))
 
-(defn -main [& _]
+(defn -main [& [num-people num-books]]
   (let [txdata (gen-data)
         n (estimate-datoms txdata)
         f #(api/transact base txdata)]
     (println "Generated about" n "datoms")
     (println "Warming up....")
-    (dotimes [i 10] (f))
+    (dotimes [i 5] (f))
     (println "Benchmarking...")
     (time-per-datom n f)))
 
@@ -147,7 +147,7 @@
     (def s (api/transact-all base txdata)))
 
   (pprint
-    (cr/query s br/person-friends))
+    (cr/query s br/dum-datoms))
 
   )
 

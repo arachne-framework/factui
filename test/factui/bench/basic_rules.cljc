@@ -23,12 +23,11 @@
 (cr/defrule people-make-friends-from-books
   "If two people have read the same book, they must be friends (wat)"
   [Datom (= e ?p1) (= a :person/has-read) (= v ?b)]
-;  [Datom (= e ?p2) (= a :person/has-read) (= v ?b)]
-;  [:test (not= ?p1 ?p2)]
+  [Datom (= e ?p2) (= a :person/has-read) (= v ?b)]
+  [:test (not= ?p1 ?p2)]
   =>
-  (println ?p1 ?b)
-  #_(api/transact! {:db/id ?p1
-                  :person/friends ?p2}))
+  (api/transact! [{:db/id ?p1
+                   :person/friends ?p2}]))
 
 (cr/defrule friends-are-always-mutual
   "Friends are mutual"
@@ -51,4 +50,8 @@
 (cr/defquery person-friends
   []
   [Datom (= e ?p) (= a :person/friends) (= v ?p2)])
+
+(cr/defquery dum-datoms
+  []
+  [?d <- Datom])
 
