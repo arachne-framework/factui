@@ -39,3 +39,10 @@ A. Yup, it sure is. Sorry. The RETE algorithm fundamentally works by trading of 
 Q. Can I dynamically generate rules!?!!
 A. No. Put down the pipe and embrace the fact that UI applications have to stop being abstract at some point.
 
+## Future Improvments
+
+Currently, FactUI works by putting a thin wrapper around Clara's external interfaces, enforcing Datom-style semantics (tempids, identity, upsert, cardinality-one) at the boundary. This works fine, but is a tiny bit hacky, as well as causing potential issues in a multi-threaded environment.
+
+The "correct" way to do it is to implment new types to satisfy Clara's various Memory-related protocols. In theory, this would be both faster and safer. But it's also a lot of work, and a lot of work to get *right* since it integrates deeply with the internal engine.
+
+The wrapper will do for now, but eventually it would be cool to do it the right way and see what performance looks like. 
