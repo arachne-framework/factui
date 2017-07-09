@@ -2,9 +2,13 @@
   (:require
     [factui.api :as api :include-macros true]
     [factui.facts :as f]
+    [factui.bench.basic-rules :as br]
     [clojure.pprint :refer [pprint]]
     #?(:clj [clojure.pprint :refer [pprint]]
-       :cljs [cljs.pprint :refer [pprint]])))
+       :cljs [cljs.pprint :refer [pprint]])
+   #?(:clj [clara.rules :as cr]
+      :cljs [clara.rules :as cr :include-macros true])
+    ))
 
 #?(:cljs (enable-console-print!))
 
@@ -40,6 +44,12 @@
    {:db/ident :person/friends
     :db/valueType :db.type/long
     :db/cardinality :db.cardinality/many}
+   {:db/ident :person/reading
+    :db/valueType :db.type/ref
+    :db/cardinality :db.cardinality/one}
+   {:db/ident :person/has-read
+    :db/valueType :db.type/ref
+    :db/cardinality :db.cardinality/one}
 
    {:db/ident :book/id
     :db/valueType :db.type/long
@@ -48,7 +58,7 @@
    {:db/ident :book/title
     :db/valueType :db.type/string
     :db/cardinality :db.cardinality/one}
-   {:db/ident :book/subject
+   {:db/ident :book/topic
     :db/valueType :db.type/string
     :db/cardinality :db.cardinality/many}])
 
@@ -58,23 +68,34 @@
     (apply str (repeatedly len
                  #(rand-nth "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")))))
 
+(defn mkeep
+  [m]
+  (into {} (filter (fn [[k v]]
+                     (and v (or (not (coll? v))
+                                (not (empty? v))))) m)))
+
 (defn rand-person
-  [id]
-  {:person/id id
-   :person/name (rand-string)
-   :person/dob (rand-date)
-   :person/likes (repeatedly (inc (rand-int 10)) rand-string)})
+  [id people-range book-range]
+  (mkeep
+    {:person/id id
+     :person/name (rand-string)
+     :person/dob (rand-date)
+     :person/likes (repeatedly (inc (rand-int 2)) rand-string)
+     :person/reading {:book/id (rand-nth book-range)}
+     :person/has-read (repeatedly (rand-int 2)
+                        (fn []
+                          {:book/id (rand-nth book-range)}))}))
 
 (defn rand-book
-  [id]
+  [id book-range]
   {:book/id id
    :book/title (rand-string)
-   :book/subject (repeatedly (inc (rand-int 5)) rand-string)})
+   :book/topic (repeatedly (inc (rand-int 5)) rand-string)})
 
-(api/defsession base ['factui.bench] schema)
+(api/defsession base ['factui.bench.basic-rules] schema)
 
-(def num-people 50)
-(def num-books 50)
+(def num-people 10)
+(def num-books 2)
 
 (defn count-thing [d]
   (cond
@@ -88,12 +109,14 @@
   (reduce + 0 (map count-thing txdata)))
 
 (defn gen-data []
-  (doall
-    (concat
-      (for [pid (range 0 num-people)]
-        (rand-person pid))
-      (for [pid (range 0 num-books)]
-        (rand-book pid)))))
+  (let [people-range (range 0 num-people)
+        book-range (range 0 num-books)]
+    (doall
+      (concat
+        (for [pid people-range]
+          (rand-person pid people-range book-range))
+        (for [pid (range 0 num-books)]
+          (rand-book pid book-range))))))
 
 (defn time-per-datom [num-datoms f]
   (let [start (now)]
@@ -109,9 +132,24 @@
         f #(api/transact base txdata)]
     (println "Generated about" n "datoms")
     (println "Warming up....")
-    (dotimes [i 100] (f))
+    (dotimes [i 10] (f))
     (println "Benchmarking...")
     (time-per-datom n f)))
+
+
+(comment
+
+  (def txdata (gen-data))
+
+  (pprint txdata)
+
+  (time
+    (def s (api/transact-all base txdata)))
+
+  (pprint
+    (cr/query s br/person-friends))
+
+  )
 
 ;; Run tests at the root level, in CLJS
 #?(:cljs

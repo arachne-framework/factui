@@ -24,7 +24,10 @@
     :db/cardinality :db.cardinality/many}
    {:db/ident :person/age
     :db/valueType :db.type/long
-    :db/cardinality :db.cardinality/one}])
+    :db/cardinality :db.cardinality/one}
+   {:db/ident :person/friends
+    :db/valueType :db.type/ref
+    :db/cardinality :db.cardinality/many}])
 
 (cr/defquery person-by-pid
   [:?pid]
@@ -84,6 +87,45 @@
           #{{:?a :person/name :?v "Luke"}
             {:?a :person/age :?v 32}
             {:?a :person/id :?v 42}}))))
+
+(deftest tempids-as-ref-values
+  (testing "same transaction"
+    (let [[s bindings] (api/transact base [{:db/id -1
+                                            :person/id 42
+                                            :person/name "Luke"
+                                            :person/friends -2}
+                                           {:db/id -2
+                                            :person/id 43
+                                            :person/name "Joe"}])
+          results (cr/query s person-by-pid :?pid 42)]
+      (is (= (set (map #(select-keys % [:?a :?v]) results))
+            #{{:?a :person/name :?v "Luke"}
+              {:?a :person/id :?v 42}
+              {:?a :person/friends :?v (bindings -2)}}))))
+  (testing "upsert (same tx)"
+    (let [[s bindings] (api/transact base [{:person/id 42
+                                            :person/name "Luke"
+                                            :person/friends {:person/id 43}}
+                                           {:db/id -2
+                                            :person/id 43
+                                            :person/name "Joe"}])
+          results (cr/query s person-by-pid :?pid 42)]
+      (is (= (set (map #(select-keys % [:?a :?v]) results))
+            #{{:?a :person/name :?v "Luke"}
+              {:?a :person/id :?v 42}
+              {:?a :person/friends :?v (bindings -2)}}))))
+  (testing "upsert (different tx)"
+    (let [[s bindings] (api/transact base [{:db/id -2
+                                            :person/id 43
+                                            :person/name "Joe"}])
+          [s _] (api/transact s [{:person/id 42
+                                  :person/name "Luke"
+                                  :person/friends {:person/id 43}}])
+          results (cr/query s person-by-pid :?pid 42)]
+      (is (= (set (map #(select-keys % [:?a :?v]) results))
+            #{{:?a :person/name :?v "Luke"}
+              {:?a :person/id :?v 42}
+              {:?a :person/friends :?v (bindings -2)}})))))
 
 (deftest identity-attribute-resolution
   (testing "same transaction"

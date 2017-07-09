@@ -79,6 +79,11 @@
   [store attr]
   (contains? (:identity-attrs store) attr))
 
+(defn- ref?
+  "Efficiently check if a given attr is a ref"
+  [store attr]
+  (contains? (:ref-attrs store) attr))
+
 (defn- has?
   "Check if the store contains a datom"
   [store {:keys [e a v]}]
@@ -141,34 +146,74 @@
   (defn- new-eid []
     (swap! eid inc)))
 
+
+(defn- collect-tempids
+  "Given a seq of datoms, return a set of all tempids present in the datoms (e
+   or v position)"
+  [store datoms]
+  (reduce (fn [tempids {:keys [e a v]}]
+            (let [tempids (if-not (pos-int? e)
+                            (conj tempids e)
+                            tempids)
+                  tempids (if (and (ref? store a) (not (pos-int? v)))
+                            (conj tempids v)
+                            tempids)]
+              tempids))
+    #{}
+    datoms))
+
+(defn- collect-ids
+  "Given a seq of datoms, return a map of {e id} for all datoms which express
+   an identity"
+  [store datoms]
+  (->> datoms
+    (keep #(datom-identity store %))
+    (map (fn [[id e]] [e id]))
+    (into {})))
+
+(defn resolve-ids
+  "Given a seqence of [attr value] ids, return a map of {id eid}, either
+   finding an existing eid in the store or creating a new one."
+  [store ids]
+  (reduce (fn [id->eid id]
+            (if (id->eid id)
+              id->eid
+              (let [eid (get (:identities store) id (new-eid))]
+                (assoc id->eid id eid))))
+    {}
+    ids))
+
+;; New, clearer tempid assignment algorithm
+;; 1. Collect all the tempids in the tx to a set.
+;; 2. Collect all the identities declared in the tx into a map of {tempid id}.
+;; 3. For each distinct identity, find (or create) a corresponding concrete eid
+;; 4. For each tempid, find (or create) a corresponding concrete eid
+;; 5. Map the datoms, substituting tempids for real IDs.
+
+
 (defn- resolve-tempids
   "Given a set of datoms (which may contain temporary IDs), return a tuple of
    concrete datoms (with tempids swapped for concrete entity IDs)
 
    Returns a tuple of a set of concrete datoms, and the tempid bindings"
   [store datoms]
-  (let [tx-ids (keep #(datom-identity store %) datoms)
-        tid->id (into {} (map (fn [[id tid]] [tid id]) tx-ids))
-        id->eid (reduce (fn [m id]
-                          (if (get m id)
-                            m
-                            (let [eid (get (:identities store) id (new-eid))]
-                              (assoc m id eid))))
-                          {}
-                  (vals tid->id))]
-    (reduce (fn [[datoms bindings] {:keys [e a v] :as datom}]
-              (if (pos-int? e)
-                [(conj datoms (f/->Datom e a v)) bindings]
-                (if-let [eid (get bindings e)]
-                  [(conj datoms (f/->Datom eid a v)) bindings]
-                  (let [id (get tid->id e)
-                        eid (if id (id->eid id) (new-eid))]
-                    [(conj datoms (f/->Datom eid a v)) (assoc bindings e eid)]))))
-      [#{} {}]
-      datoms)))
+  (let [tids (collect-tempids store datoms)
+        tid->id (collect-ids store datoms)
+        id->eid (resolve-ids store (vals tid->id))
+        bindings (into {} (map (fn [tid]
+                                 [tid
+                                  (or (-> tid tid->id id->eid) (new-eid))])
+                            tids))
+        new-datoms (map (fn [{:keys [e a v]}]
+                          (let [e (if (pos-int? e) e (bindings e))
+                                v (if (and (ref? store a) (not (pos-int? v)))
+                                    (bindings v)
+                                    v)]
+                            (f/->Datom e a v)))
+                     datoms)]
+    [new-datoms bindings]))
 
-
-(defrecord SimpleStore [schema index identities card-one-attrs identity-attrs]
+(defrecord SimpleStore [schema index identities card-one-attrs identity-attrs ref-attrs]
   Store
   (resolve [store datoms]
     (let [[datoms bindings] (resolve-tempids store datoms)
@@ -189,7 +234,7 @@
     (filter :db/valueType)
     (map (fn [txmap]
            [(:db/ident txmap)
-            (select-keys txmap [:db/cardinality :db/unique])]))
+            (select-keys txmap [:db/cardinality :db/unique :db/valueType])]))
     (into {})))
 
 (defn- attrs-with
@@ -208,7 +253,8 @@
   (let [schema (build-schema (concat base-schema schema-txdata))]
     (->SimpleStore schema {} {}
       (attrs-with schema :db/cardinality :db.cardinality/one)
-      (attrs-with schema :db/unique :db.unique/identity))))
+      (attrs-with schema :db/unique :db.unique/identity)
+      (attrs-with schema :db/valueType :db.type/ref))))
 
 ;; TODO: Plan
 ;; Pass around the store, updating it and using it to filter whenever anythign is changed.
