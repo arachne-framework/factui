@@ -4,81 +4,102 @@
                 :cljs cljs.spec.alpha) :as s]
             [clojure.string :as str]
             [clojure.walk :as w]
+            #?(:clj [clojure.core.match :as m]
+               :cljs [cljs.core.match :as m :include-macros true])
             [factui.specs.datalog :as ds]
-            [factui.specs.clara :as cs])
+            [factui.specs.clara :as cs]
+            [factui.specs :as fs])
   (:refer-clojure :exclude [compile]))
 
-(defn- tagged-value?
-  [v]
-  (and (vector? v) (= 2 (count v)) (keyword? (first v))))
+(defn mkeep [m]
+  "Remove nil/empty values from map"
+  (into {} (filter (fn [[_ v]]
+                     (if (coll? v)
+                       (not-empty v)
+                       v))
+             m)))
 
-(defmulti transform
-  "Applies a transform to each node of the parse tree. Default behavior is to
-   pass through unchanged."
-  (fn [node]
-    (if (tagged-value? node)
-      (first node)
-      ::default))
-  :default ::default)
+(defn- compile-in
+  "Compile a ::ds/in to a ::cs/query-params"
+  [in]
+  (for [clause in]
+    (m/match clause
+      [::ds/binding [::ds/bind-scalar v]] (keyword v)
+      [::ds/binding _] (throw (ex-info "Only scalar bindings for :in clauses are currently supported." {}))
+      [::ds/rules-var] (throw (ex-info "Datalog rules are not supported." {}))
+      [::ds/src-var (throw (ex-info "Datalog sources are not supported." {}))])))
 
-(defmethod transform ::default [form] form)
+(defn- compile-constraint
+  "Convert data pattern terms toa Clara fact constraint"
+  [[[e-tag e-form]
+    [a-tag a-form]
+    [v-tag v-form]]]
+  (let [e-expr (when (not= ::ds/placeholder e-tag)
+                 (list '= 'e e-form))
+        a-expr (when (= ::ds/variable a-tag)
+                 (list '= 'a a-form))
+        v-expr (when (not= ::ds/placeholder v-tag)
+                 (list '= 'v v-form))
+        exprs (filter identity [e-expr a-expr v-expr])]
+    (if (= ::ds/constant a-tag)
+      [::cs/fact-constraint {::cs/fact-type a-form
+                             ::cs/destructured-fact '[{:keys [e v]}]
+                             ::cs/s-expressions exprs}]
+      [::cs/fact-constraint {::cs/fact-type 'factui.facts.Datom
+                             ::cs/s-expressions exprs}])))
 
-(defmethod transform :vec-query
-  [[_ q]]
-  [:clauses
-   [[:find (-> q :find-spec)]
-    [:where-clauses (-> q :where-clause :clauses)]]])
+(defn compile-defquery
+  "Compile the arguments to a `defquery` form"
+  [n]
+  (m/match n
 
-(defmethod transform :map-query
-  [[_ q]]
-  [:clauses
-   [[:find (-> q :find)]
-    [:where-clauses (-> q :where)]]])
+    ;; normalize map & vector forms
+    [::ds/vec-query vq] (mkeep
+                          {::find (::ds/find vq)
+                           ::in (-> vq ::ds/in-clause ::ds/in)
+                           ::with (-> vq ::ds/with-clause ::ds/with)
+                           ::where (-> vq ::ds/where-clause ::ds/where)})
+    [::ds/map-query mq] (mkeep
+                          {::find (:find mq)
+                           ::in (:in mq)
+                           ::with (:with mq)
+                           ::where (:where mq)})
 
-(defmethod transform :clauses [[_ clauses]]
-  (apply concat clauses))
 
-#_(s/def ::accum-expr (s/tuple ::binding #{'<-} ::accumulator #{:from} ::fact-constraint))
+    ;; Populate name & docstr
+    [::fs/name name] [::cs/name name]
+    [::fs/docstr doc] [::cs/docstr doc]
 
-(defmethod transform :find [[_ f]]
-  [f]
-  [
-   ;; TODO: Find with pull will need to insert some clauses
-   ;; Otherwise does not affect clauses
-   #_[:accum-expr ['?find-results
-                 '<-
-                 `(acc/find)
-                 :from
-                 {:fact-type 'factui.facts.Datom
-                  :s-expressions ['(= e ?e)]}]]])
+    ;; In clause
+    {::fs/query {::in in}} #(-> %
+                             (assoc ::cs/query-params (compile-in in))
+                             (update ::fs/query dissoc ::in))
 
-(defmethod transform :where-clauses
-  [[_ clauses]]
-  clauses)
+    ;; Build conditions
+    [::ds/expression-clause [::ds/data-pattern {::ds/terms terms}]] (compile-constraint terms)
 
-(defmethod transform :expression-clause
-  [[_type clause]]
-  clause)
 
-(defmethod transform :data-pattern
-  [[_ {terms :terms} :as dp]]
-  (let [exprs (filter identity
-                (map (fn [pos [type term]]
-                       (when (and term (not= type :placeholder))
-                         `(~'= ~pos ~term)))
-                  '[e a v]
-                  terms))]
-    [:fact-constraint {:fact-type 'factui.facts.Datom
-                       :s-expressions exprs}]))
+    ;; move where clauses to lhs conditions
+    {::fs/query {::where where}} #(-> %
+                                    (assoc-in [::cs/lhs ::cs/conditions] where)
+                                    (update ::fs/query dissoc ::where))
+    ;; find is temporarily unused
+    [::find _] nil
+
+    :else n))
 
 (defn compile
-  "Given data that conforms to the spec for a Datalog query, emit data that
-   conforms to the spec for a Clara LHS."
-  [query]
-  (let [input (s/conform ::ds/query query)
-        output (loop [in input]
-                 (let [out (w/prewalk transform in)]
-                   (if (= in out)
-                     out
-                     (recur out))))]
-    (s/unform ::cs/lhs output)))
+  "Convert the input data to output data by walking each node of the input
+   using `clojure.walk/prewalk` and applying the supplied compiler function.
+   Compilation is finished when this leaves the data unchanged.
+
+   For each node, the compiler function may return either a function or a
+   value, which will be used to calculate (or simply replace) the node."
+  [in compiler]
+  (let [out (w/prewalk (fn [node]
+                         (let [v (compiler node)]
+                           (if (fn? v) (v node) v)))
+              in)]
+    (if (= in out)
+      out
+      (recur out compiler))))

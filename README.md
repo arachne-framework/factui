@@ -45,4 +45,4 @@ Currently, FactUI works by putting a thin wrapper around Clara's external interf
 
 The "correct" way to do it is to implment new types to satisfy Clara's various Memory-related protocols. In theory, this would be both faster and safer. But it's also a lot of work, and a lot of work to get *right* since it integrates deeply with the internal engine.
 
-The wrapper will do for now, but eventually it would be cool to do it the right way and see what performance looks like. 
+The wrapper will do for now, but eventually it would be cool to do it the right way and see what performance looks like.
