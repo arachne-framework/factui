@@ -168,6 +168,8 @@
         clara-args (interleave inputs args)
         results-fn (::factui.api/result-fn query)
         results (apply cr/query session (:name query) clara-args)]
+    (when-not results-fn
+      (throw (ex-info "Query did not specify a find clause - perhaps it was a basic Clara query, not one defined by FactUI" {})))
     (results-fn results)))
 
 (comment
