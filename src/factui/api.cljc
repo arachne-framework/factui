@@ -7,6 +7,7 @@
             #?(:clj [clara.rules.compiler :as com])
             [factui.specs :as fs]
             [factui.specs.clara :as cs]
+            [factui.specs.datalog :as ds]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]))
 
@@ -52,6 +53,95 @@
 
 (s/fdef defquery :args ::fs/defquery-args)
 
+;; given a map of {:a 1 :b 2 :c 3} and a seq of keys [:a :c] return a tuple [1 3]
+
+
+#_(defn- result-xformer
+  "Given a conformed :factui.specs.datalog/find, return a function which
+   transforms Clara-style query results to datomic-style query results."
+  [find]
+  (let [type (first find)
+        assert-variable
+        variables (when-not (= type ::ds/find-scalar type)
+                    (keep (fn [elem]
+                            (when (sequential? elem)
+                              (assert-variable elem)
+                              (keyword (second elem))))
+                      (second find)))]
+    (case type
+      ::ds/find-rel
+      (let [f (apply juxt )]
+        (fn [r] (set (map f r))))
+      ::ds/find-tuple
+      (let [f (apply juxt (variables elems))]
+        (fn [r] (f (first r))))
+      ::ds/find-coll
+      (let [k (first (variables elems))]
+        (fn [r] (set (map k r))))
+      ::ds/find-scalar
+      (let [elem (::ds/find-elem find)]
+
+        (fn [r]
+          ))
+      )
+    )
+  )
+
+(defn- assert-variable-elem
+  "Given a conformed find element (::ds/find-elem), throw an error if it is
+   not a variable."
+  [elem]
+  (when-not (= ::ds/variable (first elem))
+    (throw (ex-info "FactUI does not yet support pull expressions or aggregates in find clauses." {}))))
+
+(defn- find-clause
+  "Given conformed argumenst to defquery, return the find clause"
+  [args]
+  (or (-> args ::fs/query second ::ds/find)
+      (-> args ::fs/query second :find)))
+
+(defn- variables
+  "Given conformed arguments to defquery, return a seq of Clara variable names"
+  [args]
+  (let [[_ elems] (find-clause args)]
+    (vec (keep (fn [elem]
+                 (when (sequential? elem)
+                   (assert-variable-elem elem)
+                   (keyword (second elem))))
+           elems))))
+
+(defmulti datalog-results
+  "Given the conformed arguments to defquery, return syntax for a function
+   which transforms its Clara-style query results to Datomic-style query
+   results."
+  (fn [args]
+    (let [[type & _] (find-clause args)] type)))
+
+(defmethod datalog-results ::ds/find-scalar
+  [args]
+  (let [[_ {elem ::ds/find-elem}] (find-clause args)]
+    (assert-variable-elem elem)
+    (let [v (keyword (second elem))]
+      `(fn [r#] (get (first r#) ~v)))))
+
+(defmethod datalog-results ::ds/find-tuple
+  [args]
+  (let [vs (variables args)]
+    `(let [f# (apply juxt ~vs)]
+       (fn [r#] (f# (first r#))))))
+
+(defmethod datalog-results ::ds/find-coll
+  [args]
+  (let [vs (variables args)]
+    `(let [f# ~(first vs)]
+       (fn [r#] (set (map f# r#))))))
+
+(defmethod datalog-results ::ds/find-rel
+  [args]
+  (let [vs (variables args)]
+    `(let [f# (apply juxt ~vs)]
+       (fn [r#] (set (map f# r#))))))
+
 #?(:clj
    (defmacro defquery
      "Define a Clara query using Datomic-style Datalog syntax."
@@ -60,19 +150,25 @@
            output (comp/compile input comp/compile-defquery)
            clara (s/unform ::cs/defquery-args output)
            inputs (vec (::cs/query-params output))
-           name (symbol (name (::cs/name output)))]
+           name (symbol (name (::cs/name output)))
+           results-fn (gensym)]
        `(do
-          (cr/defquery ~@clara)
-          ~(if (com/compiling-cljs?)
-             `(set! ~name (assoc ~name ::inputs ~inputs))
-             `(alter-var-root (var ~name) assoc ::inputs ~inputs))))))
+          (let [~results-fn ~(datalog-results input)]
+            (cr/defquery ~@clara)
+            ~(if (com/compiling-cljs?)
+               `(set! ~name (assoc ~name ::inputs ~inputs
+                                         ::result-fn ~results-fn))
+               `(alter-var-root (var ~name) assoc ::inputs ~inputs
+                                                  ::result-fn ~results-fn)))))))
 
 (defn query
   "Run a FactUI query"
   [session query & args]
   (let [inputs (::factui.api/inputs query)
-        clara-args (interleave inputs args)]
-    (apply cr/query session (:name query) clara-args)))
+        clara-args (interleave inputs args)
+        results-fn (::factui.api/result-fn query)
+        results (apply cr/query session (:name query) clara-args)]
+    (results-fn results)))
 
 (comment
 
@@ -93,7 +189,7 @@
                                       :in [?id]
                                       :where [[?id :person/name ?name]]})))
 
-  (pprint
+  (clojure.pprint/pprint
     (macroexpand-1 '(defquery person-name
                       "Find a person's name"
                       [:find ?name
@@ -105,6 +201,7 @@
     [:find ?name
      :in ?id
      :where [?id :person/name ?name]])
+
 
   (pprint person-name)
 

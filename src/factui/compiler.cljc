@@ -54,16 +54,14 @@
   (m/match n
 
     ;; normalize map & vector forms
-    [::ds/vec-query vq] (mkeep
-                          {::find (::ds/find vq)
-                           ::in (-> vq ::ds/in-clause ::ds/in)
-                           ::with (-> vq ::ds/with-clause ::ds/with)
-                           ::where (-> vq ::ds/where-clause ::ds/where)})
-    [::ds/map-query mq] (mkeep
-                          {::find (:find mq)
-                           ::in (:in mq)
-                           ::with (:with mq)
-                           ::where (:where mq)})
+    [::ds/vec-query vq] {::find (::ds/find vq)
+                         ::in (-> vq ::ds/in-clause ::ds/in)
+                         ::with (-> vq ::ds/with-clause ::ds/with)
+                         ::where (-> vq ::ds/where-clause ::ds/where)}
+    [::ds/map-query mq] {::find (:find mq)
+                         ::in (:in mq)
+                         ::with (:with mq)
+                         ::where (:where mq)}
 
 
     ;; Populate name & docstr
@@ -74,6 +72,11 @@
     {::fs/query {::in in}} #(-> %
                              (assoc ::cs/query-params (compile-in in))
                              (update ::fs/query dissoc ::in))
+
+    ;; Blank in clause
+
+
+    #_{::fs/query (_ :guard #(nil? (::in %)))}
 
     ;; Build conditions
     [::ds/expression-clause [::ds/data-pattern {::ds/terms terms}]] (compile-constraint terms)

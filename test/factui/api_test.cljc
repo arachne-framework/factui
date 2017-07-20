@@ -27,8 +27,14 @@
     :db/cardinality :db.cardinality/many}])
 
 (api/defquery person-name
-  "Find a person by their name"
-  [:find ?name
+   "Find a person by their name"
+   [:find ?name
+    :in ?id
+    :where [?id :person/name ?name]])
+
+(api/defquery person-name-scalar
+  "Find a person by their name as a scalar"
+  [:find ?name .
    :in ?id
    :where [?id :person/name ?name]])
 
@@ -37,6 +43,22 @@
   {:find [?name]
    :in [?id]
    :where [[?id :person/name ?name]]})
+
+(api/defquery person-tuple
+  "Find a single person, as a tuple"
+  [:find [?id ?name]
+   :in ?id
+   :where [?id :person/name ?name]])
+
+(api/defquery all-people
+  "Find the names and ids of all people in the DB"
+  [:find ?id ?name
+   :where [?id :person/name ?name]])
+
+(api/defquery all-names
+  "Find the names all people in the DB as a collection"
+  [:find [?name ...]
+   :where [?id :person/name ?name]])
 
 (api/defsession base ['factui.api-test] test-schema)
 
@@ -49,5 +71,18 @@
         alex-id (bindings -100)
         result (api/query s person-name luke-id)
         result-m (api/query s person-name-map luke-id)]
-    (is (= result result-m))
-    (is (= 1 (count result)))))
+    (is (= result result-m #{["Luke"]}))
+    (is (= 1 (count result)))
+    (testing "multiple results"
+      (let [r (api/query s all-people)]
+        (is (= r #{[luke-id "Luke"]
+                 [alex-id "Alex"]}))))
+    (testing "collection results"
+      (let [r (api/query s all-names)]
+        (is (= r #{"Luke" "Alex"}))))
+    (testing "scalar results"
+      (let [r (api/query s person-name-scalar luke-id)]
+        (is (= r "Luke"))))
+    (testing "tuple results"
+      (let [r (api/query s person-tuple luke-id)]
+        (is (= r [luke-id "Luke"]))))))
