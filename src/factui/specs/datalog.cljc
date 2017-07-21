@@ -110,8 +110,8 @@
 (s/def ::data-pattern (s/and vector?
                         (s/cat ::src-var (s/? ::src-var)
                                ::terms (s/+ (s/or ::variable ::variable
-                                                ::placeholder #{'_}
-                                                ::constant ::constant)))))
+                                                  ::placeholder #{'_}
+                                                  ::constant ::constant)))))
 
 (s/def ::pred-expr (s/tuple (s/cat ::pred ::fn-name
                                    ::args (s/+ ::fn-arg))))
@@ -125,11 +125,7 @@
                           ::terms (s/+ (s/or ::variable ::variable
                                              ::placeholder #{'_}
                                              ::constant ::constant))))
-(s/def ::constant #(not (and (symbol? %)
-                          (or (str/starts-with? (name %) "?")
-                              (str/starts-with? (name %) "$")))))
-
-(comment
-
-
-  )
+(s/def ::constant (s/and #(not (and (symbol? %)
+                                 (or (str/starts-with? (name %) "?")
+                                     (str/starts-with? (name %) "$"))))
+                         #(not (coll? %))))

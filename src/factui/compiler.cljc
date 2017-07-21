@@ -45,41 +45,45 @@
   [n]
   (m/match n
 
-    ;; normalize map & vector forms
-    [::ds/vec-query vq] {::find (::ds/find vq)
-                         ::in (-> vq ::ds/in-clause ::ds/in)
-                         ::with (-> vq ::ds/with-clause ::ds/with)
-                         ::where (-> vq ::ds/where-clause ::ds/where)}
-    [::ds/map-query mq] {::find (:find mq)
-                         ::in (:in mq)
-                         ::with (:with mq)
-                         ::where (:where mq)}
-
-
     ;; Populate name & docstr
     [::fs/name name] [::cs/name name]
     [::fs/docstr doc] [::cs/docstr doc]
+
+    ;; normalize map & vector forms
+    [::fs/vec-query vq] {::find (::ds/find vq)
+                         ::in (-> vq ::ds/in-clause ::ds/in)
+                         ::with (-> vq ::ds/with-clause ::ds/with)
+                         ::where (-> vq ::fs/where-clause ::fs/where)}
+    [::fs/map-query mq] {::find (:find mq)
+                         ::in (:in mq)
+                         ::with (:with mq)
+                         ::where (:where mq)}
 
     ;; In clause
     {::fs/query {::in in}} #(-> %
                              (assoc ::cs/query-params (compile-in in))
                              (update ::fs/query dissoc ::in))
 
-    ;; Blank in clause
-
-
-    #_{::fs/query (_ :guard #(nil? (::in %)))}
+    ;; Lift conditions
+    [::fs/clara-condition condition] condition
+    [::fs/datomic-clause clause] clause
 
     ;; Build conditions
     [::ds/expression-clause [::ds/data-pattern {::ds/terms terms}]] (compile-constraint terms)
-
 
     ;; move where clauses to lhs conditions
     {::fs/query {::where where}} #(-> %
                                     (assoc-in [::cs/lhs ::cs/conditions] where)
                                     (update ::fs/query dissoc ::where))
+
+    ;; Clean up empty query
+    ;[::fs/query {}] nil
+
     ;; find is temporarily unused
     [::find _] nil
+
+    ;; with is temporarily unused
+    [::with _] nil
 
     ;; Not-yet-implemented things
     [::ds/or-clause _] (throw (ex-info "'or' not yet implemented" {}))
@@ -91,6 +95,50 @@
     [::ds/rule-expr _] (throw (ex-info "rule-expr not yet implemented" {}))
 
     :else n))
+
+(comment
+
+  (def c (s/conform ::fs/defquery-args
+           '(person-name
+              "find a person"
+              [:find ?name
+               :in ?id
+               :where [?id :person/name ?name]])))
+
+  (def r
+    '{:factui.specs.clara/name person-name,
+      :factui.specs.clara/docstr "find a person",
+      :factui.specs/query {},
+      :factui.specs.clara/query-params (:?id),
+      :factui.specs.clara/lhs
+      {:factui.specs.clara/conditions
+       [:factui.specs.clara/fact-constraint
+        {:factui.specs.clara/fact-type :person/name,
+         :factui.specs.clara/destructured-fact [{:keys [e v]}],
+         :factui.specs.clara/s-expressions ((= e ?id) (= v ?name))}]}})
+
+  (def c (s/conform ::cs/defquery-args
+           '(person-name
+              "find a person"
+              [:?x]
+              [:fact-type [{:keys [e v]}] (= e ?id) (= v ?name)]
+
+              )
+           ))
+
+  (clojure.pprint/pprint c)
+
+  (s/unform ::cs/defquery-args r)
+
+
+
+  (factui.api/defquery person-name
+    "find a person"
+    [:find ?name
+     :in ?id
+     :where [?id :person/name ?name]])
+
+  )
 
 (defn compile
   "Convert the input data to output data by walking each node of the input

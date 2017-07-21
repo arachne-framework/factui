@@ -53,40 +53,6 @@
 
 (s/fdef defquery :args ::fs/defquery-args)
 
-;; given a map of {:a 1 :b 2 :c 3} and a seq of keys [:a :c] return a tuple [1 3]
-
-
-#_(defn- result-xformer
-  "Given a conformed :factui.specs.datalog/find, return a function which
-   transforms Clara-style query results to datomic-style query results."
-  [find]
-  (let [type (first find)
-        assert-variable
-        variables (when-not (= type ::ds/find-scalar type)
-                    (keep (fn [elem]
-                            (when (sequential? elem)
-                              (assert-variable elem)
-                              (keyword (second elem))))
-                      (second find)))]
-    (case type
-      ::ds/find-rel
-      (let [f (apply juxt )]
-        (fn [r] (set (map f r))))
-      ::ds/find-tuple
-      (let [f (apply juxt (variables elems))]
-        (fn [r] (f (first r))))
-      ::ds/find-coll
-      (let [k (first (variables elems))]
-        (fn [r] (set (map k r))))
-      ::ds/find-scalar
-      (let [elem (::ds/find-elem find)]
-
-        (fn [r]
-          ))
-      )
-    )
-  )
-
 (defn- assert-variable-elem
   "Given a conformed find element (::ds/find-elem), throw an error if it is
    not a variable."
@@ -147,7 +113,12 @@
      "Define a Clara query using Datomic-style Datalog syntax."
      [& args]
      (let [input (s/conform ::fs/defquery-args args)
+           ;_ (println "\n===========")
+           ;_ (clojure.pprint/pprint input)
            output (comp/compile input comp/compile-defquery)
+           ;_ (println "===========")
+           ;_ (clojure.pprint/pprint output)
+           ;_ (println "===========")
            clara (s/unform ::cs/defquery-args output)
            inputs (vec (::cs/query-params output))
            name (symbol (name (::cs/name output)))
@@ -162,7 +133,7 @@
                                                   ::result-fn ~results-fn)))))))
 
 (defn query
-  "Run a FactUI query"
+  "Run a query that was defined using FactUI, returing Datomic-style results"
   [session query & args]
   (let [inputs (::factui.api/inputs query)
         clara-args (interleave inputs args)
@@ -172,41 +143,52 @@
       (throw (ex-info "Query did not specify a find clause - perhaps it was a basic Clara query, not one defined by FactUI" {})))
     (results-fn results)))
 
+
 (comment
 
-  (use 'clojure.pprint)
-
-  (pprint
-    (s/conform ::fs/defquery-args '(person-name
-                                     "Find a person's name"
-                                     [:find ?name
-                                      :in ?id
-                                      :where [?id :person/name ?name]])))
-
-  (pprint
-    (s/conform ::fs/defquery-args '(person-name
-                                     "Find a person's name"
-                                     {:find [?name]
-                                      :in [?id]
-                                      :where [[?id :person/name ?name]]})))
+  (defquery all-attrs-clara
+    "Find all attributes of an entity, using a mixed Clara clause"
+    [:find ?attr ?value
+     :in ?id
+     :where
+     [?eid :person/id ?id]
+     [factui.facts.Datom (= e ?eid) (= a ?attr) (= v ?value)]])
 
   (clojure.pprint/pprint
-    (macroexpand-1 '(defquery person-name
-                      "Find a person's name"
-                      [:find ?name
-                       :in ?id
-                       :where [?id :person/name ?name]])))
+    (macroexpand-1
+      '(defquery person-name-map
+        "Find a person by their name"
+        {:find [?name]
+         :in [?id]
+         :where [[?id2 :person/name ?name2]
+                 [?id1 :person/name ?name1]]})))
+
+  {:factui.specs/name person-name-map,
+   :factui.specs/docstr "Find a person by their name",
+   :factui.specs/query
+   [:factui.specs/map-query
+    {:find
+     [:factui.specs.datalog/find-rel
+      [[:factui.specs.datalog/variable ?name]]],
+     :in
+     [[:factui.specs.datalog/binding
+       [:factui.specs.datalog/bind-scalar ?id]]],
+     :where
+     [:factui.specs/clara-condition
+      [:factui.specs.clara/fact-constraint
+       {:factui.specs.clara/fact-type [?id :person/name ?name]}]]}]}
+
+  (defquery person-name-map
+    "Find a person by their name"
+    {:find [?name]
+     :in [?id]
+     :where [[?id :person/name ?name]]})
 
   (defquery person-name
-    "find a person"
+    "Find a person by their name"
     [:find ?name
      :in ?id
      :where [?id :person/name ?name]])
-
-
-  (pprint person-name)
-
-
 
   )
 
