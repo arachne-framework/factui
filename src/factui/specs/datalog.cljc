@@ -74,7 +74,7 @@
                              :min-count 1
                              :kind vector?)))
 
-(s/def ::clause (s/alt ::not-clause ::not-clause
+(s/def ::clause (s/or ::not-clause ::not-clause
                        ::not-join-clause ::not-join-clause
                        ::or-clause ::or-clause
                        ::or-join-clause ::or-join-clause
@@ -127,3 +127,8 @@
 (s/def ::constant #(not (and (symbol? %)
                           (or (str/starts-with? (name %) "?")
                               (str/starts-with? (name %) "$")))))
+
+(comment
+
+
+  )

@@ -11,14 +11,6 @@
             [factui.specs :as fs])
   (:refer-clojure :exclude [compile]))
 
-(defn mkeep [m]
-  "Remove nil/empty values from map"
-  (into {} (filter (fn [[_ v]]
-                     (if (coll? v)
-                       (not-empty v)
-                       v))
-             m)))
-
 (defn- compile-in
   "Compile a ::ds/in to a ::cs/query-params"
   [in]
@@ -88,6 +80,15 @@
                                     (update ::fs/query dissoc ::where))
     ;; find is temporarily unused
     [::find _] nil
+
+    ;; Not-yet-implemented things
+    [::ds/or-clause _] (throw (ex-info "'or' not yet implemented" {}))
+    [::ds/or-join-clause _] (throw (ex-info "'or-join' not yet implemented" {}))
+    [::ds/not-clause _] (throw (ex-info "'not' not yet implemented" {}))
+    [::ds/not-join-clause _] (throw (ex-info "'not-join' not yet implemented" {}))
+    [::ds/fn-expr _] (throw (ex-info "fn-expr not yet implemented" {}))
+    [::ds/pred-expr _] (throw (ex-info "pred-expr not yet implemented" {}))
+    [::ds/rule-expr _] (throw (ex-info "rule-expr not yet implemented" {}))
 
     :else n))
 

@@ -183,7 +183,6 @@
                                       :in ?id
                                       :where [?id :person/name ?name]])))
 
-
   (pprint
     (s/conform ::fs/defquery-args '(person-name
                                      "Find a person's name"
@@ -254,6 +253,22 @@
     (fn [p1 p2]
       (transact! [{:db/id p1
                    :person/friends p2}])))
+
+  ;; Auto-binding in the body since we can't do any kind of grouping or roll-up for a rule, anyway...
+  (defrule person-friends
+    [?p1 :person/friends ?p2]
+    (not [?p2 :person/friends ?p1])
+    =>
+    (transact! [{:db/id ?p1
+                 :person/friends ?p2}]))
+
+  ;; Problem. a rule can't contain any kind of :find or :with, since it can't aggregate results. Each result tuple results in a separate invocation of the body.
+
+  ;; But what about when you *want* aggregates? Got to do those in the clauses I guess. Which implies a grammar different from Datomic.
+
+  ;; But if that's the rule for rules, should we have different rules for queries? I don't think so.
+
+  ;; Maybe it's ok having a more clara-like syntax for rules, and a more Datomic-like syntax for components
 
   ;; Note that we might need to add the ability to pass custom Props here. Not sure if we'll need it.
   (defcomponent PersonCard
