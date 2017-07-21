@@ -1,12 +1,17 @@
 (ns factui.api-test
   (:require
-    #?(:cljs [factui.api :as api :include-macros true]
-       :clj [factui.api :as api])
-   #?(:clj [clara.rules :as cr]
+   #?(:cljs [factui.api :as api :include-macros true]
+      :clj [factui.api :as api])
+   #?(:clj
+           [clara.rules :as cr]
       :cljs [clara.rules :as cr :include-macros true])
-    [clojure.pprint :refer [pprint]]
-   #?(:clj [clojure.test :as t :refer [deftest is testing run-tests]]
-      :cljs [cljs.test :as t :refer-macros [deftest is testing run-tests]])))
+           [clojure.pprint :refer [pprint]]
+   #?(:clj
+           [clojure.test :as t :refer [deftest is testing run-tests]]
+      :cljs [cljs.test :as t :refer-macros [deftest is testing run-tests]])
+
+   #?(:cljs [factui.facts :as f :refer [Datom]] :clj [factui.facts :as f]))
+   #?(:clj (:import [factui.facts Datom])))
 
 (def test-schema
   [{:db/ident :person/id
@@ -60,6 +65,22 @@
   [:find [?name ...]
    :where [?id :person/name ?name]])
 
+(api/defquery all-attrs
+  "Find all attributes of an entity"
+  [:find ?attr ?value
+   :in ?id
+   :where
+   [?eid :person/id ?id]
+   [?eid ?attr ?value]])
+
+(api/defquery all-attrs-clara
+   "Find all attributes of an entity, using a mixed Clara clause"
+   [:find ?attr ?value
+    :in ?id
+    :where
+    [?eid :person/id ?id]
+    [Datom (= e ?eid) (= a ?attr) (= v ?value)]])
+
 (api/defsession base ['factui.api-test] test-schema)
 
 (deftest simple-query
@@ -86,3 +107,18 @@
     (testing "tuple results"
       (let [r (api/query s person-tuple luke-id)]
         (is (= r [luke-id "Luke"]))))))
+
+
+(deftest all-attrs-query
+  (let [[s bindings] (api/transact base [{:db/id -99
+                                          :person/id 42
+                                          :person/name "Luke"
+                                          :person/likes ["Beer" "Cheese"]}])
+        luke-id (bindings -99)
+        result1 (api/query s all-attrs 42)
+        result2 (api/query s all-attrs-clara 42)]
+    (is (= result1 result2
+          #{[:person/id 42]
+            [:person/likes "Beer"]
+            [:person/likes "Cheese"]
+            [:person/name "Luke"]}))))

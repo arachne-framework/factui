@@ -1,11 +1,10 @@
 (ns factui.compiler
   "Tools for converting Datalog expressions to Clara expressions"
-  (:require [#?(:clj clojure.spec.alpha
-                :cljs cljs.spec.alpha) :as s]
+  (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]
+            [clara.rules.compiler :as com]
             [clojure.walk :as w]
-            #?(:clj [clojure.core.match :as m]
-               :cljs [cljs.core.match :as m :include-macros true])
+            [clojure.core.match :as m]
             [factui.specs.datalog :as ds]
             [factui.specs.clara :as cs]
             [factui.specs :as fs])
@@ -37,7 +36,9 @@
       [::cs/fact-constraint {::cs/fact-type a-form
                              ::cs/destructured-fact '[{:keys [e v]}]
                              ::cs/s-expressions exprs}]
-      [::cs/fact-constraint {::cs/fact-type 'factui.facts.Datom
+      [::cs/fact-constraint {::cs/fact-type (if (com/compiling-cljs?)
+                                              'factui.facts/Datom
+                                              'factui.facts.Datom)
                              ::cs/s-expressions exprs}])))
 
 (defn compile-defquery
@@ -95,50 +96,6 @@
     [::ds/rule-expr _] (throw (ex-info "rule-expr not yet implemented" {}))
 
     :else n))
-
-(comment
-
-  (def c (s/conform ::fs/defquery-args
-           '(person-name
-              "find a person"
-              [:find ?name
-               :in ?id
-               :where [?id :person/name ?name]])))
-
-  (def r
-    '{:factui.specs.clara/name person-name,
-      :factui.specs.clara/docstr "find a person",
-      :factui.specs/query {},
-      :factui.specs.clara/query-params (:?id),
-      :factui.specs.clara/lhs
-      {:factui.specs.clara/conditions
-       [:factui.specs.clara/fact-constraint
-        {:factui.specs.clara/fact-type :person/name,
-         :factui.specs.clara/destructured-fact [{:keys [e v]}],
-         :factui.specs.clara/s-expressions ((= e ?id) (= v ?name))}]}})
-
-  (def c (s/conform ::cs/defquery-args
-           '(person-name
-              "find a person"
-              [:?x]
-              [:fact-type [{:keys [e v]}] (= e ?id) (= v ?name)]
-
-              )
-           ))
-
-  (clojure.pprint/pprint c)
-
-  (s/unform ::cs/defquery-args r)
-
-
-
-  (factui.api/defquery person-name
-    "find a person"
-    [:find ?name
-     :in ?id
-     :where [?id :person/name ?name]])
-
-  )
 
 (defn compile
   "Convert the input data to output data by walking each node of the input

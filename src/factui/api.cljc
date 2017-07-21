@@ -1,7 +1,7 @@
 (ns factui.api
   (:require [factui.session :as session]
             [factui.store :as store]
-            [factui.compiler :as comp]
+            #?(:clj [factui.compiler :as comp])
             #?(:clj [clara.rules :as cr]
                :cljs [clara.rules :as cr :include-macros true])
             #?(:clj [clara.rules.compiler :as com])
@@ -142,7 +142,6 @@
     (when-not results-fn
       (throw (ex-info "Query did not specify a find clause - perhaps it was a basic Clara query, not one defined by FactUI" {})))
     (results-fn results)))
-
 
 (comment
 
