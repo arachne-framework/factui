@@ -97,6 +97,41 @@
 
     :else n))
 
+(defn compile-defrule
+  "Compile the arguments to a `defrule` form"
+  [n]
+  (m/match n
+
+    ;; Name and docstr
+    ::fs/name ::cs/name
+    ::fs/docstr ::cs/docstr
+    ::fs/separator ::cs/separator
+
+    ;; Lift conditions
+    [::fs/clara-condition condition] condition
+    [::fs/datomic-clause clause] clause
+
+    ;; wrap in LHS
+    [::fs/conditions conditions] [::cs/lhs {::cs/conditions conditions}]
+
+    ::fs/rhs ::cs/rhs
+
+    ;; Build conditions
+    [::ds/expression-clause [::ds/data-pattern {::ds/terms terms}]] (compile-constraint terms)
+
+    ;; Not-yet-implemented things
+    [::ds/or-clause _] (throw (ex-info "'or' not yet implemented" {}))
+    [::ds/or-join-clause _] (throw (ex-info "'or-join' not yet implemented" {}))
+    [::ds/not-clause _] (throw (ex-info "'not' not yet implemented" {}))
+    [::ds/not-join-clause _] (throw (ex-info "'not-join' not yet implemented" {}))
+    [::ds/fn-expr _] (throw (ex-info "fn-expr not yet implemented" {}))
+    [::ds/pred-expr _] (throw (ex-info "pred-expr not yet implemented" {}))
+    [::ds/rule-expr _] (throw (ex-info "rule-expr not yet implemented" {}))
+
+
+
+    :else n))
+
 (defn compile
   "Convert the input data to output data by walking each node of the input
    using `clojure.walk/prewalk` and applying the supplied compiler function.
@@ -112,3 +147,4 @@
     (if (= in out)
       out
       (recur out compiler))))
+

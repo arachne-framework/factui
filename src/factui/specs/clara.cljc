@@ -40,3 +40,9 @@
                               ::docstr (s/? string?)
                               ::query-params (s/coll-of ::kw-query-var :kind vector?)
                               ::lhs ::lhs))
+
+(s/def ::defrule-args (s/cat ::name symbol?
+                             ::docstr (s/? string?)
+                             ::lhs ::lhs
+                             ::separator #{'=>}
+                             ::rhs (s/+ any?)))

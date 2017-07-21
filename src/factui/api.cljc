@@ -51,8 +51,6 @@
   [txdata]
   (session/transact! txdata true))
 
-(s/fdef defquery :args ::fs/defquery-args)
-
 (defn- assert-variable-elem
   "Given a conformed find element (::ds/find-elem), throw an error if it is
    not a variable."
@@ -108,6 +106,8 @@
     `(let [f# (apply juxt ~vs)]
        (fn [r#] (set (map f# r#))))))
 
+
+(s/fdef defquery :args ::fs/defquery-args)
 #?(:clj
    (defmacro defquery
      "Define a Clara query using Datomic-style Datalog syntax."
@@ -143,7 +143,36 @@
       (throw (ex-info "Query did not specify a find clause - perhaps it was a basic Clara query, not one defined by FactUI" {})))
     (results-fn results)))
 
+
+(s/fdef defrule :args ::fs/defrule-args)
+
+#?(:clj
+   (defmacro defrule
+     "Define a Clara rule. The left hand side may contain both Clara-style and
+      Datalog-style conditions."
+     [& args]
+     (let [input (s/conform ::fs/defrule-args args)
+           output (comp/compile input comp/compile-defrule)
+           clara (s/unform ::cs/defrule-args output)]
+       `(cr/defrule ~@clara))))
+
 (comment
+
+  (defrule person-name-xxx
+    "Person name"
+    [?p :person/name ?n]
+    [?p :person/age ?a]
+    =>
+    (println "hey"))
+
+  (clojure.pprint/pprint
+    (s/conform ::cs/defrule-args
+      '(person-name
+         "Person"
+         [:person/name [{:keys [e v]}] (= e ?p) (= v ?n)]
+         [:person/age  [{:keys [e v]}] (= e ?p) (= v ?a)]
+         =>
+         (println "hey"))))
 
   (defquery all-attrs-clara
     "Find all attributes of an entity, using a mixed Clara clause"

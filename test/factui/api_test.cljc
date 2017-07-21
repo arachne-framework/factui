@@ -81,6 +81,23 @@
     [?eid :person/id ?id]
     [Datom (= e ?eid) (= a ?attr) (= v ?value)]])
 
+(api/defrule simple-rule
+  "A basic, simple rule"
+  [?p :person/likes "Milk"]
+  =>
+  (api/transact! [{:db/id ?p
+                   :person/likes "Cookies"}]))
+
+(api/defrule simple-rule-logical
+  "A basic, simple rule"
+  [?p :person/likes "Beer"]
+  [?p :person/likes "Wine"]
+  [?p :person/likes "Whisky"]
+  =>
+  (api/transact-logical! [{:db/id ?p
+                           :person/likes "Alcohol"}]))
+
+
 (api/defsession base ['factui.api-test] test-schema)
 
 (deftest simple-query
@@ -122,3 +139,56 @@
             [:person/likes "Beer"]
             [:person/likes "Cheese"]
             [:person/name "Luke"]}))))
+
+(deftest simple-rule
+  (let [[s _] (api/transact base [{:db/id -99
+                                          :person/id 42
+                                          :person/name "Luke"
+                                          :person/likes ["Milk"]}])
+        result (api/query s all-attrs 42)]
+    (is (= result
+          #{[:person/id 42]
+            [:person/likes "Milk"]
+            [:person/likes "Cookies"]
+            [:person/name "Luke"]}))))
+
+(deftest simple-rule-logical
+  (let [[s1 bindings] (api/transact base [{:db/id -99
+                                           :person/id 42
+                                           :person/name "Luke"
+                                           :person/likes ["Beer" "Whisky"]}])
+        result1 (api/query s1 all-attrs 42)
+        [s2 _] (api/transact s1 [{:person/id 42
+                                    :person/name "Luke"
+                                    :person/likes ["Wine"]}])
+        result2 (api/query s2 all-attrs 42)
+        eid (get bindings -99)
+        [s3 _] (api/transact s2 [[:db/retract eid :person/likes "Whisky"]])
+        result3 (api/query s3 all-attrs 42)]
+    (is (= result1 #{[:person/id 42]
+                     [:person/likes "Beer"]
+                     [:person/likes "Whisky"]
+                     [:person/name "Luke"]}))
+    (is (= result2 #{[:person/id 42]
+                     [:person/likes "Beer"]
+                     [:person/likes "Wine"]
+                     [:person/likes "Whisky"]
+                     [:person/likes "Alcohol"]
+                     [:person/name "Luke"]}))
+    (is (= result3 #{[:person/id 42]
+                     [:person/likes "Beer"]
+                     [:person/likes "Wine"]
+                     [:person/name "Luke"]}))))
+
+
+
+
+
+
+
+
+
+
+
+
+
