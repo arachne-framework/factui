@@ -132,17 +132,30 @@
                `(alter-var-root (var ~name) assoc ::inputs ~inputs
                                                   ::result-fn ~results-fn)))))))
 
-(defn query
-  "Run a query that was defined using FactUI, returing Datomic-style results"
+(defn query-raw
+  "Run a query that was defined using FactUI, using positional inputs.
+
+  Return unprocessed (Clara-style) results."
   [session query & args]
   (let [inputs (::factui.api/inputs query)
-        clara-args (interleave inputs args)
-        results-fn (::factui.api/result-fn query)
-        results (apply cr/query session (:name query) clara-args)]
+        clara-args (interleave inputs args)]
+    (apply cr/query session (:name query) clara-args)))
+
+(defn results
+  "Given Clara-style results from a given query return Datomic-style results.
+   Does not re-run the query."
+  [query results]
+  (let [results-fn (::factui.api/result-fn query)]
     (when-not results-fn
-      (throw (ex-info "Query did not specify a find clause - perhaps it was a basic Clara query, not one defined by FactUI" {})))
+      (throw (ex-info "Query did not specify a find clause - perhaps it was a basic Clara query, not one defined by FactUI?" {:query query})))
     (results-fn results)))
 
+(defn query
+  "Run a query that was defined using FactUI, using positional inputs.
+
+   Returns Datomic-style results."
+  [session query & args]
+  (results query (query-raw session query args)))
 
 (s/fdef defrule :args ::fs/defrule-args)
 

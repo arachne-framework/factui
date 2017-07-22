@@ -7,22 +7,22 @@
   :source-paths ["dev" "src"]
   :profiles {:test {:plugins [[lein-shell "0.4.0" :exclusions [org.clojure/clojure]]
                               [lein-cljsbuild "1.1.6" :exclusions [org.clojure/clojure]]]
-                    :dependencies [[org.clojure/clojurescript "1.9.562"
-                                   :exclusions [org.clojure/tools.reader]]]
-                    :cljsbuild {:builds [{:id "factui-dev"
+                    :dependencies [[org.clojure/clojurescript "1.9.671"]]
+                    :cljsbuild {:builds [{:id "dev"
                                           :source-paths ["src" "dev"]
                                           :figwheel true
-                                          :compiler {:main factui.ui.bench
+                                          :compiler {:main factui.ui.dev
+                                                     :optimizations :none
                                                      :asset-path "js/out"
-                                                     :output-to "target/public/js/demo.js"
+                                                     :output-to "target/public/js/dev.js"
                                                      :output-dir "target/public/js/out"
-                                                     :cache-analysis false
-                                                     :source-map-timestamp true}}
+                                                     :cache-analysis false}}
                                          {:id "test-whitespace"
                                           :source-paths ["src" "dev" "test"]
                                           :compiler {:main factui.test-runner
                                                      :optimizations :whitespace
                                                      :output-to "target/test-ws.js"
+                                                     :output-dir "target/test-ws"
                                                      :cache-analysis false}}
                                          {:id "test-advanced"
                                           :source-paths ["src" "dev" "test"]
@@ -30,6 +30,7 @@
                                                      :externs ["resources/phantomjs-externs.js"]
                                                      :optimizations :advanced
                                                      :output-to "target/test-adv.js"
+                                                     :output-dir "target/test-adv"
                                                      :cache-analysis false}}
                                          {:id "test-bench"
                                           :source-paths ["src" "dev" "test"]
@@ -37,20 +38,26 @@
                                                      :externs ["resources/phantomjs-externs.js"]
                                                      :optimizations :advanced
                                                      :output-to "target/test-bench.js"
+                                                     :output-dir "target/test-bench"
                                                      :cache-analysis false}}]}
                     :aliases {"test-clj" ["run" "-m" "factui.test-runner"]
                               "test-cljs" ["do" ["clean"]
                                            ["cljsbuild" "once" "test-advanced"]
                                            ["shell" "phantomjs" "target/test-adv.js"]]
                               "test-all" ["do" ["test-clj"]
-                                               ["test-cljs"]]
+                                          ["test-cljs"]]
                               "bench" ["do" ["clean"]
-                                            ["cljsbuild" "once" "test-bench"]
-                                            ["shell" "phantomjs" "target/test-bench.js"]]
+                                       ["cljsbuild" "once" "test-bench"]
+                                       ["shell" "phantomjs" "target/test-bench.js"]]
                               }}
              :dev {:plugins [[lein-figwheel "0.5.10" :exclusions [org.clojure/clojurescript]]]
-                   :dependencies [[rum "0.10.8"]
-                                  [figwheel-sidecar "0.5.10"]]
+                   :dependencies [[figwheel-sidecar "0.5.10"]
+                                  [rum "0.10.8"]
+                                  ;[cljsjs/react "15.6.1-0"]
+                                  ;[cljsjs/react-dom "15.6.1-0"]
+                                  ;[cljsjs/react-dom-server "15.6.1-0"]
+                                  ;[cljsjs/create-react-class "15.6.0-0"]
+                                  ]
                    :source-paths ["dev" "test"]
                    :resource-paths ["target"]
                    :clean-targets ^{:protect false} ["target" :target-path]
