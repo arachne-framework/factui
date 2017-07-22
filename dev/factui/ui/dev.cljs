@@ -30,7 +30,7 @@
            (if (not= (:version old-app-state) (:version new-app-state))
              (rum/request-render component)
              (when (not (== (:session old-app-state)
-                          (:session new-app-state)))
+                            (:session new-app-state)))
                (let [old-results @results
                      new-results (apply f/query-raw
                                    (:session new-app-state)
