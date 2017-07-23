@@ -2,8 +2,8 @@
   (:require [rum.core :as rum]
             [factui.api :as f :include-macros true]))
 
-;; TODO: Allow non-query args (& validate that they correctly force an update)
-;; TODO: Test figwheel forced updates
+;; DONE: Allow non-query args (& validate that they correctly force an update)
+;; DONE: Test figwheel forced updates
 ;; MAYBE: Allow passing in a different app-state atom on the fly...? Probably not worth it.
 ;; TODO: Add pulse predicates, create demo of events
 ;; TODO: Create wrapper macro to make cleaner
@@ -111,9 +111,22 @@
                      :session new-session
                      :bindings bindings))))))
 
+(def ^:private version (atom 0))
+
 (defn app-state
   "Build and return an initial app-state atom, based on the provided FactUI
    session"
   [base]
-  (atom {:session base
-         :version 0}))
+  (let [app-state (atom {:session base
+                         :version 0})]
+    (add-watch version :version-watch
+      (fn [_ _ _ version]
+        (swap! app-state assoc :version version)))
+    app-state))
+
+(defn refresh
+  "Invoke this function to force all components to re-render, globally.
+
+  Useful for development, using Figwheel's :on-jsload"
+  []
+  (swap! version inc))

@@ -9,7 +9,7 @@
                               [lein-cljsbuild "1.1.6" :exclusions [org.clojure/clojure]]]
                     :cljsbuild {:builds [{:id "dev"
                                           :source-paths ["src" "dev"]
-                                          :figwheel true
+                                          :figwheel {:on-jsload "factui.rum/refresh"}
                                           :compiler {:main factui.ui.dev
                                                      :optimizations :none
                                                      :asset-path "js/out"
