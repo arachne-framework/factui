@@ -2,7 +2,6 @@
   (:require [rum.core :as rum]
             [factui.api :as f :include-macros true]))
 
-;; TODO: Factor support code out to different namespace
 ;; TODO: Allow non-query args (& validate that they correctly force an update)
 ;; TODO: Test figwheel forced updates
 ;; MAYBE: Allow passing in a different app-state atom on the fly...? Probably not worth it.

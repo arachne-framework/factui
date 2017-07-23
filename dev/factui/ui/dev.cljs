@@ -16,14 +16,14 @@
 
 (f/defquery task-q
   [:find [?title ?completed]
-   :in ?t
+   :in ?task
    :where
-   [?t :task/title ?title]
-   [?t :task/completed ?completed]])
+   [?task :task/title ?title]
+   [?task :task/completed ?completed]])
 
 (rum/defc Task < {:key-fn (fn [_ id] id)}
                  (fr/query task-q)
-  [app-state task]
+  [app-state ?task]
   (let [[title completed] *results*]
     [:li (str (if completed
                 "DONE: "
@@ -35,9 +35,10 @@
    [?t :task/title _]])
 
 (rum/defc TaskList < (fr/query tasklist-q)
-  [app-state]
+                     rum/static
+  [app-state title]
   [:div
-     [:h1 "Tasks"]
+     [:h1 title]
      [:ul (for [t *results*]
             (Task app-state t))]
    [:button {:on-click (fn []
@@ -59,14 +60,11 @@
   (let [app-state (fr/app-state base)
         root (.getElementById js/document "root")]
 
-    (rum/mount (TaskList app-state) root)
+    (rum/mount (TaskList app-state "Tasks") root)
 
     (fr/transact! app-state initial-data)
 
     (js/setTimeout (fn []
-                     (println "updating data...")
                      (fr/transact! app-state [{:db/id 10001
                                                :task/completed true}]))
-      3000))
-
-  )
+      4000)))
