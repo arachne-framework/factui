@@ -7,7 +7,6 @@
   :source-paths ["dev" "src"]
   :profiles {:test {:plugins [[lein-shell "0.4.0" :exclusions [org.clojure/clojure]]
                               [lein-cljsbuild "1.1.6" :exclusions [org.clojure/clojure]]]
-                    :dependencies [[org.clojure/clojurescript "1.9.671"]]
                     :cljsbuild {:builds [{:id "dev"
                                           :source-paths ["src" "dev"]
                                           :figwheel true
@@ -53,11 +52,7 @@
              :dev {:plugins [[lein-figwheel "0.5.10" :exclusions [org.clojure/clojurescript]]]
                    :dependencies [[figwheel-sidecar "0.5.10"]
                                   [rum "0.10.8"]
-                                  ;[cljsjs/react "15.6.1-0"]
-                                  ;[cljsjs/react-dom "15.6.1-0"]
-                                  ;[cljsjs/react-dom-server "15.6.1-0"]
-                                  ;[cljsjs/create-react-class "15.6.0-0"]
-                                  ]
+                                  [org.clojure/clojurescript "1.9.671"]]
                    :source-paths ["dev" "test"]
                    :resource-paths ["target"]
                    :clean-targets ^{:protect false} ["target" :target-path]
