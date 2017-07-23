@@ -155,7 +155,7 @@
 
    Returns Datomic-style results."
   [session query & args]
-  (results query (query-raw session query args)))
+  (results query (apply query-raw session query args)))
 
 (s/fdef defrule :args ::fs/defrule-args)
 

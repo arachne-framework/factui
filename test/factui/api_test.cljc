@@ -140,7 +140,7 @@
             [:person/likes "Cheese"]
             [:person/name "Luke"]}))))
 
-(deftest simple-rule
+(deftest simple-rule-test
   (let [[s _] (api/transact base [{:db/id -99
                                           :person/id 42
                                           :person/name "Luke"
@@ -152,7 +152,7 @@
             [:person/likes "Cookies"]
             [:person/name "Luke"]}))))
 
-(deftest simple-rule-logical
+(deftest simple-rule-logical-test
   (let [[s1 bindings] (api/transact base [{:db/id -99
                                            :person/id 42
                                            :person/name "Luke"

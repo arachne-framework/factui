@@ -98,8 +98,9 @@
    Returns nil if the given datom would not replace any existing ones."
   [store {:keys [e a]}]
   (when (card-one? store a)
-    (when-let [v (get-in store [:index e a])]
-      (f/->Datom e a v))))
+    (let [v (get-in store [:index e a] ::not-found)]
+      (when (not= v ::not-found)
+        (f/->Datom e a v)))))
 
 (defn- index-insertions
   "Update the store's index with the given concrete datoms"
