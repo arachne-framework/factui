@@ -1,4 +1,4 @@
-(ns factui.session-test
+(ns factui.impl.session-test
   (:require
     #?(:cljs [factui.api :as api :include-macros true]
        :clj [factui.api :as api])
@@ -64,7 +64,7 @@
 
 #?(:cljs (enable-console-print!))
 
-(api/defsession base ['factui.session-test] test-schema)
+(api/defsession base ['factui.impl.session-test] test-schema)
 
 (deftest basic-insertion
   (let [s (api/transact-all base [{:person/id 42

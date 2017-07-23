@@ -1,4 +1,4 @@
-(ns factui.txdata
+(ns factui.impl.txdata
   "Tools for converting Datomic-style txdata to sets of Clara facts"
   (:require [factui.facts :as f]
             [clojure.spec.alpha :as s]))

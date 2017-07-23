@@ -1,5 +1,5 @@
 (ns factui.test-runner
-  (:require [factui.session-test]
+  (:require [factui.impl.session-test]
             [factui.api-test]
    #?(:clj [clojure.test :refer [deftest is are run-tests]]
       :cljs [cljs.test :refer-macros [deftest is are run-tests]])))
@@ -11,11 +11,11 @@
   []
   #?(:clj
      (clojure.test/run-tests
-       'factui.session-test
+       'factui.impl.session-test
        'factui.api-test)
      :cljs
      (cljs.test/run-tests
-       'factui.session-test
+       'factui.impl.session-test
        'factui.api-test)))
 
 ;; Run tests at the root level, in CLJS

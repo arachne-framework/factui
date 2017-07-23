@@ -1,4 +1,4 @@
-(ns factui.store
+(ns factui.impl.store
   "A datom store. For storing datoms."
   (:require #?(:cljs [factui.facts :as f :refer [Datom]]
                :clj [factui.facts :as f])

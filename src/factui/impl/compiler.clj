@@ -1,4 +1,4 @@
-(ns factui.compiler
+(ns factui.impl.compiler
   "Tools for converting Datalog expressions to Clara expressions"
   (:require [clojure.spec.alpha :as s]
             [clojure.string :as str]

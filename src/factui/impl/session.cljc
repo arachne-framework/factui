@@ -1,12 +1,12 @@
-(ns factui.session
+(ns factui.impl.session
   "A Clara session wrapper which builds in Datalog semantics."
   (:require [clara.rules :as cr]
             [clara.rules.engine :as eng]
             [clara.rules.listener :as l]
-            [factui.txdata :as txdata]
+            [factui.impl.txdata :as txdata]
             #?(:clj [factui.facts :as f]
                :cljs [factui.facts :as f :refer [Datom]])
-            [factui.store :as store])
+            [factui.impl.store :as store])
   #?(:clj (:import [factui.facts Datom])))
 
 (def ^:dynamic *store*)
