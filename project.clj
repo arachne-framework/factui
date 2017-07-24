@@ -7,7 +7,7 @@
   :source-paths ["dev" "src"]
   :profiles {:test {:plugins [[lein-shell "0.4.0" :exclusions [org.clojure/clojure]]
                               [lein-cljsbuild "1.1.6" :exclusions [org.clojure/clojure]]]
-                    :cljsbuild {:builds [{:id "dev"
+                    :cljsbuild {:builds [{:id "figwheel"
                                           :source-paths ["src" "dev"]
                                           :figwheel {:on-jsload "factui.rum/refresh"}
                                           :compiler {:main factui.ui.dev
@@ -15,6 +15,16 @@
                                                      :asset-path "js/out"
                                                      :output-to "target/public/js/dev.js"
                                                      :output-dir "target/public/js/out"
+                                                     :cache-analysis false}}
+                                         {:id "dev"
+                                          :source-paths ["src" "dev"]
+                                          :compiler {:main factui.ui.dev
+                                                     :optimizations :advanced
+                                                     ;:pretty-print true
+                                                     ;:source-map "target/public/js/dev.map.js"
+                                                     :asset-path "js/out"
+                                                     :output-to "target/public/js/dev.js"
+                                                     :output-dir "target/public/js/dev"
                                                      :cache-analysis false}}
                                          {:id "test-whitespace"
                                           :source-paths ["src" "dev" "test"]

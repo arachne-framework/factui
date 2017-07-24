@@ -14,6 +14,19 @@
     :db/valueType :db.type/boolean
     :db/cardinality :db.cardinality/one}])
 
+
+(defn rand-string
+  []
+  (apply str (repeatedly (+ 5 (rand-int 10))
+               #(rand-nth (seq "abcdefghijklmnopqrstuvwxyz")))))
+
+(defn new-tasks
+  "Generate txdata for N new tasks"
+  [n]
+  (repeatedly n (fn []
+                  {:task/title (str "Task " (rand-string))
+                   :task/completed false})))
+
 (f/defquery task-q
   [:find [?title ?completed]
    :in ?task
@@ -21,29 +34,55 @@
    [?task :task/title ?title]
    [?task :task/completed ?completed]])
 
+(def a (atom 0))
+
+(f/defrule task-changed-rule
+  [?task :task/completed ?completed]
+  [?task :task/title ?title]
+  =>
+  (swap! a inc))
+
 (rum/defc Task < {:key-fn (fn [_ id] id)}
                  (fr/query task-q)
+                 rum/static
   [app-state ?task]
   (let [[title completed] *results*]
-    [:li (str (if completed
-                "DONE: "
-                "TODO: ") title)]))
+    [:li
+     [:span {:style {:cursor "pointer"
+                     :font-weight "bold"}
+             :on-click (fn []
+                         (fr/transact! app-state
+                           [{:db/id ?task
+                             :task/completed (not completed)}]))}
+      (if completed "TODO:" "DONE:")]
+     " "
+     title]))
 
 (f/defquery tasklist-q
-  [:find [?t ...]
+  [:find ?t ?title
    :where
-   [?t :task/title _]])
+   [?t :task/title ?title]])
 
 (rum/defc TaskList < (fr/query tasklist-q)
                      rum/static
   [app-state title]
   [:div
-     [:h1 title]
-     [:ul (for [t *results*]
-            (Task app-state t))]
+   [:h1 title]
    [:button {:on-click (fn []
-                         (js/alert "Adding task!"))}
-    "Add Task"]])
+                         (fr/transact! app-state (new-tasks 1)))}
+    "Add Task"]
+   [:button {:on-click (fn []
+                         (fr/transact! app-state (new-tasks 10)))}
+    "Add 10 Tasks"]
+   [:button {:on-click (fn []
+                         (fr/transact! app-state (new-tasks 100)))}
+    "Add 100 Tasks"]
+   [:br]
+   [:br]
+   [:div "Results:" (count *results*)]
+   [:ul (for [[t _] *results*]
+          (Task app-state t))]
+   ])
 
 (f/defsession base ['factui.ui.dev] schema)
 
@@ -57,14 +96,13 @@
 
 (defn ^:export main
   []
+
+
   (let [app-state (fr/app-state base)
         root (.getElementById js/document "root")]
 
-    (rum/mount (TaskList app-state "Tasks") root)
-
     (fr/transact! app-state initial-data)
 
-    (js/setTimeout (fn []
-                     (fr/transact! app-state [{:db/id 10001
-                                               :task/completed true}]))
-      4000)))
+    (rum/mount (TaskList app-state "Tasks") root)
+
+    ))

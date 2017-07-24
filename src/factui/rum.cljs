@@ -4,9 +4,33 @@
 
 ;; DONE: Allow non-query args (& validate that they correctly force an update)
 ;; DONE: Test figwheel forced updates
-;; MAYBE: Allow passing in a different app-state atom on the fly...? Probably not worth it.
-;; TODO: Add pulse predicates, create demo of events
-;; TODO: Create wrapper macro to make cleaner
+
+;; TODO: Add pulse predicates, create demo of event handling
+
+
+;; How to make it faster:
+
+;; The expensive part is definitely the N queries, where N is the number of
+;; components. Although each query is pretty quick (~0.1ms), doing that many
+;; queries and comparisons adds up (for about 100ms with 2k components)
+
+;; IDEAS:
+;; - Don't use for "live loop" animations
+;; - Move events & reactions to web worker
+
+;; - Use a Clara rule instead of a Clara query for reactiveness. Still have to do the same amount of logical work (matching updates to components) but can optimize the algorithm, and, most importantly, avoid the heavyweight comparisons
+;; - Downside:: need to map "many results"
+
+;; Current algo: O(n) where n is the number of FactUI components. Each operation also incurs the cost of a (potentially expensive) data structure comparison.
+
+;; Algo A: Have a stateful rule AND a query. Components register with the
+;; stateful rule. When the rule fires, fire a "rerender" notification to all the components for which
+;; it is a match (components whose args match!). But: key point: we can use a hashtable for this instead
+;; of a linear list of components, giving us O(1) instead of O(N) performance.
+
+;; Algo B: ONly a rule. The rule is smart enough to aggregate all "hits"
+;; into a single result set, and notifies the correct component based on that.
+
 
 (defn- start-watching
   "Given a Rum state and a query, begin watching the current app-state atom
@@ -93,10 +117,7 @@
    :will-unmount (fn [state]
                    ;:TODO :deregister listener
                    state
-                   )
-
-   :should-update (fn [old-state new-state]
-                    true)})
+                   )})
 
 (defn transact!
   "Swap a session-atom, updating it with the given txdata.
