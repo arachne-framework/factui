@@ -1,6 +1,8 @@
 (ns factui.rum
   (:require [rum.core :as rum]
-            [factui.api :as f :include-macros true]))
+            [factui.api :as f :include-macros true]
+            [cljs.core.async :as a])
+  (:require-macros [cljs.core.async.macros :refer [go-loop]]))
 
 ;; DONE: Allow non-query args (& validate that they correctly force an update)
 ;; DONE: Test figwheel forced updates
@@ -31,65 +33,66 @@
 ;; Algo B: ONly a rule. The rule is smart enough to aggregate all "hits"
 ;; into a single result set, and notifies the correct component based on that.
 
+;; TODO: prove concept
+;; TODO: Write "reactive-query" macro (to combine the writing of the query & the rule)
+;; TODO: Clean up. Don't require passing botgh query & registry. Pull out as much reactive utility code as possible.
+;; TODO: Ensure figwheel reloading still works, ensure rum-static still works
 
-(defn- start-watching
-  "Given a Rum state and a query, begin watching the current app-state atom
-   for changes to the specified query, using the current arguments.
-
-   Returns an updated Rum state."
+(defn- registry-key
+  "Given a Rum state and a query, return the registry key it should use (that
+   is, the query arguments)."
   [state query]
-  (let [watch-key (gensym "factui-watcher")
-        [app-state & args] (:rum/args state)
-        session (:session @app-state)
-        results (atom (apply f/query-raw session query args))
-        component (:rum/react-component state)]
+  (println "building registry key...")
+  (let [num-inputs (count (:factui.api/inputs query))]
+    ;; The first N Rum arguments, after the app state. Could improve this logic, maybe?
+    (vec (take num-inputs (drop 1 (:rum/args state))))))
 
-    (add-watch app-state watch-key
-      (fn [_ _ old-app-state new-app-state]
-        (if (not= (:version old-app-state)
-                  (:version new-app-state))
-          (rum/request-render component)
-          (when (not (== (:session old-app-state)
-                         (:session new-app-state)))
-            (let [old-results @results
-                  new-results (apply f/query-raw
-                                (:session new-app-state)
-                                query args)]
-              (when (not= old-results new-results)
-                (reset! results new-results)
-                (rum/request-render component)))))))
+(defn- deregister
+  "Deregister a Rum mixin from an active query"
+  [state query registry]
 
-    (assoc state ::results results
-                 ::watch-key watch-key
-                 ::watched-args (:rum/args state))))
+  state
+  )
 
-(defn- stop-watching
-  "Stop watching the app-state atom"
+(defn- listener
+  "Given a Rum component's state, return a channel. When any value is put upon
+   the channel, request a render of the given component."
   [state]
-  (let [[app-state & _] (::watched-args state)]
-    (when app-state
-      (remove-watch app-state (::watch-key state))))
-  state)
+  (let [ch (a/chan (a/dropping-buffer 1))]
+
+    (go-loop []
+      (when (<! ch)
+        (rum/request-render (:rum/react-component state))
+        (recur)))
+
+    ch))
+
+(defn- register
+  "Deregister a Rum mixin from an active query"
+  [state query registry]
+  (swap! registry update (registry-key state query)
+    (fn [ch]
+      (if ch ch (listener state))))
+  (assoc state ::registered-args (:rum/args state)))
 
 (defn- on-update
   "Called whenever the component is about to render, both the first time and
-   subsequent times (:will-mount and :will-update.)
+   subsequent times (:will-mount and :will-update)
 
    Takes the FactUI query and the Rum state and returns updated state."
 
-  [query state]
-  (if (= (:rum/args state) (::watched-args state))
+  [state query registry]
+  (if (= (:rum/args state) (::registered-args state))
     state
     (-> state
-      (stop-watching)
-      (start-watching query))))
+      (deregister query registry)
+      (register query registry))))
 
 (def ^:dynamic *results*)
 
 ;; Defines the following keys in the Rum state:
 ; ::results => atom containing latest query results (if any)
-; ::watch-key => key being used to watch the current args
-; ::watched-args => the atom & args used for the current watcher
+; ::registered-args => args registered to the query
 
 (defn query
   "Given a FactUI query, construct a Rum mixin which will watch for changes to
@@ -103,21 +106,20 @@
 
    The component does not additional update semantics, but the FactUI mixin is
    fully composable with rum/static and rum/local."
-  [query]
-  {:will-mount #(on-update query %)
+  [query registry]
+  {:will-mount #(on-update % query registry)
 
-   :will-update #(on-update query %)
+   :will-update #(on-update % query registry)
 
    :wrap-render (fn [render-fn]
-                  (fn [state & args]
-                    (let [results (f/results query @(::results state))]
+                  (fn [state & render-args]
+                    (let [[app-state & q-args] (:rum/args state)
+                          results (apply f/query (:session @app-state) query q-args)]
                       (binding [*results* results]
-                        (apply render-fn state args)))))
+                        (apply render-fn state render-args)))))
 
    :will-unmount (fn [state]
-                   ;:TODO :deregister listener
-                   state
-                   )})
+                   (deregister state query registry))})
 
 (defn transact!
   "Swap a session-atom, updating it with the given txdata.

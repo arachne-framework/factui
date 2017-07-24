@@ -137,7 +137,7 @@
 
   Return unprocessed (Clara-style) results."
   [session query & args]
-  (let [inputs (::factui.api/inputs query)
+  (let [inputs (::inputs query)
         clara-args (interleave inputs args)]
     (apply cr/query session (:name query) clara-args)))
 
@@ -145,7 +145,7 @@
   "Given Clara-style results from a given query return Datomic-style results.
    Does not re-run the query."
   [query results]
-  (let [results-fn (::factui.api/result-fn query)]
+  (let [results-fn (::result-fn query)]
     (when-not results-fn
       (throw (ex-info "Query did not specify a find clause - perhaps it was a basic Clara query, not one defined by FactUI?" {:query query})))
     (results-fn results)))

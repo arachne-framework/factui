@@ -2,7 +2,9 @@
   (:require [factui.api :as f :include-macros true]
             [factui.rum :as fr :refer [*results*]]
             [clara.rules :as cr :include-macros true]
-            [rum.core :as rum :include-macros true]))
+            [rum.core :as rum :include-macros true]
+            [cljs.core.async :as a])
+  (:require-macros [clojure.core.async]))
 
 (enable-console-print!)
 
@@ -34,16 +36,17 @@
    [?task :task/title ?title]
    [?task :task/completed ?completed]])
 
-(def a (atom 0))
-
-(f/defrule task-changed-rule
-  [?task :task/completed ?completed]
+(def task-r-registry (atom {}))
+(f/defrule task-r
   [?task :task/title ?title]
+  [?task :task/completed ?completed]
   =>
-  (swap! a inc))
+  (let [key [?task]]
+    (when-let [ch (get @task-r-registry key)]
+      (a/put! ch true))))
 
 (rum/defc Task < {:key-fn (fn [_ id] id)}
-                 (fr/query task-q)
+                 (fr/query task-q task-r-registry)
                  rum/static
   [app-state ?task]
   (let [[title completed] *results*]
@@ -63,7 +66,16 @@
    :where
    [?t :task/title ?title]])
 
-(rum/defc TaskList < (fr/query tasklist-q)
+(def tasklist-r-registry (atom {}))
+(f/defrule tasklist-r
+  [?t :task/title ?title]
+  =>
+  (let [key []]
+    (when-let [ch (get @tasklist-r-registry key)]
+      (a/put! ch true))))
+
+
+(rum/defc TaskList < (fr/query tasklist-q tasklist-r-registry)
                      rum/static
   [app-state title]
   [:div
@@ -73,10 +85,10 @@
     "Add Task"]
    [:button {:on-click (fn []
                          (fr/transact! app-state (new-tasks 10)))}
-    "Add 10 Tasks"]
-   [:button {:on-click (fn []
-                         (fr/transact! app-state (new-tasks 100)))}
     "Add 100 Tasks"]
+   [:button {:on-click (fn []
+                         (fr/transact! app-state (new-tasks 500)))}
+    "Add 500 Tasks"]
    [:br]
    [:br]
    [:div "Results:" (count *results*)]
