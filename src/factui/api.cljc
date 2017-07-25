@@ -184,17 +184,6 @@
            clara (s/unform ::cs/defrule-args output)]
        `(cr/defrule ~@clara))))
 
-;;TODO: Add an indentifier to sessions & registrations, to allow multiple concurrent registrations.
-;; Currently, a registration will fire whenever a rule is fired from *anywhere*.
-;; But sessions are immutable and forkable. So it makes sense to have a
-;; "session-id" so that you can identify a single "logical" session across time
-;; (or at least, one you want notifications on)
-
-
-;; PROBLEM: Say a trigger sends 10 notifications. The registered listener grabs the first one, waits for the session, and notifies successfully. But then there is *another* notification queued up, with a session that will never be delivered.
-
-;; Solution: close the session channel upon delivery and recur.
-
 (defn register
   "Register a listener on a reactive query, for specific query inputs.
    Whenever the query triggers, with matching values, the results will be placed

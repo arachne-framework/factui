@@ -4,38 +4,8 @@
             [cljs.core.async :as a])
   (:require-macros [cljs.core.async.macros :refer [go-loop]]))
 
-;; DONE: Allow non-query args (& validate that they correctly force an update)
-;; DONE: Test figwheel forced updates
-
 ;; TODO: Add pulse predicates, create demo of event handling
-
-;; How to make it faster:
-
-;; The expensive part is definitely the N queries, where N is the number of
-;; components. Although each query is pretty quick (~0.1ms), doing that many
-;; queries and comparisons adds up (for about 100ms with 2k components)
-
-;; IDEAS:
-;; - Don't use for "live loop" animations
-;; - Move events & reactions to web worker
-
-;; - Use a Clara rule instead of a Clara query for reactiveness. Still have to do the same amount of logical work (matching updates to components) but can optimize the algorithm, and, most importantly, avoid the heavyweight comparisons
-;; - Downside:: need to map "many results"
-
-;; Current algo: O(n) where n is the number of FactUI components. Each operation also incurs the cost of a (potentially expensive) data structure comparison.
-
-;; Algo A: Have a stateful rule AND a query. Components register with the
-;; stateful rule. When the rule fires, fire a "rerender" notification to all the components for which
-;; it is a match (components whose args match!). But: key point: we can use a hashtable for this instead
-;; of a linear list of components, giving us O(1) instead of O(N) performance.
-
-;; Algo B: ONly a rule. The rule is smart enough to aggregate all "hits"
-;; into a single result set, and notifies the correct component based on that.
-
-;; TODO: prove concept DONE
-;; TODO: Write "reactive-query" macro (to combine the writing of the query & the rule)
-;; TODO: Clean up. Don't require passing botgh query & registry. Pull out as much reactive utility code as possible.
-;; TODO: Ensure figwheel reloading still works, ensure rum-static still works
+;; TODO: See if it's worth moving rules engine to web worker
 
 (defn- query-args
   "Given a Rum state and a query, return a vectory of FactUI query args, based
