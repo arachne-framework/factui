@@ -122,8 +122,8 @@
 
 (s/fdef defquery :args ::fs/defquery-args)
 #?(:clj
-   (defmacro defquery
-     "Define a Clara query using Datomic-style Datalog syntax.
+   (defmacro defquery-static
+     "Define a basic Clara query using Datomic-style Datalog syntax.
 
      The resulting query will have the following additional keys defined:
 
@@ -189,6 +189,11 @@
 ;; "session-id" so that you can identify a single "logical" session across time
 ;; (or at least, one you want notifications on)
 
+
+;; PROBLEM: Say a trigger sends 10 notifications. The registered listener grabs the first one, waits for the session, and notifies successfully. But then there is *another* notification queued up, with a session that will never be delivered.
+
+;; Solution: close the session channel upon delivery and recur.
+
 (defn register
   "Register a listener on a reactive query, for specific query inputs.
    Whenever the query triggers, with matching values, the results will be placed
@@ -197,16 +202,17 @@
    The listener will be de-registered when the results channel is closed."
   [session-id q inputs]
   (let [registry (:factui/registry q)
-        notify-ch (a/chan (a/dropping-buffer 1))
+        notify-ch (a/chan (a/sliding-buffer 1))
         results-ch (a/chan (a/sliding-buffer 1))
         registry-key [session-id (vec inputs)]]
     (swap! registry assoc registry-key notify-ch)
-    (a/go-loop []
-      (let [session (<! (<! notify-ch))
-            results (apply query session q inputs)]
-        (if (>! results-ch results)
-          (recur)
-          (swap! registry dissoc registry-key))))
+    (go-loop []
+      (if-let [session (<! (<! notify-ch))]
+        (let [results (apply query session q inputs)]
+          (if (>! results-ch results)
+            (recur)
+            (swap! registry dissoc registry-key)))
+        (recur)))
     results-ch))
 
 (defn trigger
@@ -214,12 +220,11 @@
   [registry input]
   (let [tx-complete-ch session/*tx-complete*
         session-id session/*session-id*]
-    (println "triggered for input:" input)
     (when-let [notify-ch (get @registry [session-id input])]
       (a/put! notify-ch tx-complete-ch))))
 
 #?(:clj
-   (defmacro defquery-reactive
+   (defmacro defquery
      "Define a reactive query. Arguments are the same as to `defquery`.
 
      The resulting query will have the following keys, in addition to those

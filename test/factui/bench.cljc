@@ -99,7 +99,7 @@
    :book/title (rand-string)
    :book/topic (repeatedly (inc (rand-int 5)) rand-string)})
 
-(api/defsession base ['factui.bench.basic-rules] schema)
+(api/defsession base ['factui.bench.basic-rules] schema ::session)
 
 (def num-people 1000)
 (def num-books 100)

@@ -37,48 +37,37 @@
 ;; TODO: Clean up. Don't require passing botgh query & registry. Pull out as much reactive utility code as possible.
 ;; TODO: Ensure figwheel reloading still works, ensure rum-static still works
 
-(defn- registry-key
-  "Given a Rum state and a query, return the registry key it should use (that
-   is, the query arguments)."
+(defn- query-args
+  "Given a Rum state and a query, return a vectory of FactUI query args, based
+   on the Rum arguments."
   [state query]
-  (println "building registry key...")
   (let [num-inputs (count (:factui/inputs query))]
     ;; The first N Rum arguments, after the app state. Could improve this logic, maybe?
     (vec (take num-inputs (drop 1 (:rum/args state))))))
 
 (defn- deregister
   "Deregister a Rum mixin from an active query"
-  [state query registry]
-  (let [k (registry-key state query)]
-    (println "deregistering:" k)
-    (swap! registry
-      (fn [r]
-        (if-let [ch (get r k)]
-          (do (a/close! ch)
-              (dissoc r k))
-          r))))
-  (dissoc state ::registered-args))
-
-(defn- listener
-  "Given a Rum component's state, return a channel. When any value is put upon
-   the channel, request a render of the given component."
-  [state]
-  (let [ch (a/chan (a/dropping-buffer 1))]
-
-    (go-loop []
-      (when (<! ch)
-        (rum/request-render (:rum/react-component state))
-        (recur)))
-
-    ch))
+  [state query session-id]
+  (when (::results-ch state)
+    (a/close! (::results-ch state)))
+  (dissoc state ::registered-args ::results-ch))
 
 (defn- register
   "Deregister a Rum mixin from an active query"
-  [state query registry]
-  (swap! registry update (registry-key state query)
-    (fn [ch]
-      (if ch ch (listener state))))
-  (assoc state ::registered-args (:rum/args state)))
+  [state query session-id]
+  (let [session (first (:rum/args state))
+        args (query-args state query)
+        results (atom (apply f/query (:session @session) query args))
+        ch (f/register session-id query args)]
+    (go-loop []
+      (when-let [r (a/<! ch)]
+        (reset! results r)
+        (rum/request-render (:rum/react-component state))
+        (recur)))
+
+    (assoc state ::registered-args (:rum/args state)
+                 ::results results
+                 ::results-ch ch)))
 
 (defn- on-update
   "Called whenever the component is about to render, both the first time and
@@ -86,22 +75,23 @@
 
    Takes the FactUI query and the Rum state and returns updated state."
 
-  [state query registry]
+  [state query session-id]
   (if (= (:rum/args state) (::registered-args state))
     state
     (-> state
-      (deregister query registry)
-      (register query registry))))
+      (deregister query session-id)
+      (register query session-id))))
 
 (def ^:dynamic *results*)
 
 ;; Defines the following keys in the Rum state:
 ; ::results => atom containing latest query results (if any)
+; ::results-ch => channel upon which will be placed new results
 ; ::registered-args => args registered to the query
 
 (defn query
-  "Given a FactUI query, construct a Rum mixin which will watch for changes to
-   the given query, and re-render whenever the query results change.
+  "Given a FactUI reactive query, construct a Rum mixin which will watch for
+   changes to the given query, and re-render whenever the query results change.
 
    The following assumptions must hold, regarding the component:
 
@@ -111,20 +101,18 @@
 
    The component does not additional update semantics, but the FactUI mixin is
    fully composable with rum/static and rum/local."
-  [query registry]
-  {:will-mount #(on-update % query registry)
+  [query session-id]
+  {:will-mount #(on-update % query session-id)
 
-   :will-update #(on-update % query registry)
+   :will-update #(on-update % query session-id)
 
    :wrap-render (fn [render-fn]
                   (fn [state & render-args]
-                    (let [[app-state & q-args] (:rum/args state)
-                          results (apply f/query (:session @app-state) query q-args)]
-                      (binding [*results* results]
-                        (apply render-fn state render-args)))))
+                    (binding [*results* @(::results state)]
+                      (apply render-fn state render-args))))
 
    :will-unmount (fn [state]
-                   (deregister state query registry))})
+                   (deregister state query session-id))})
 
 (defn transact!
   "Swap a session-atom, updating it with the given txdata.

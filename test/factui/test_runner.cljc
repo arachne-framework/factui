@@ -7,24 +7,22 @@
 
 #?(:cljs (enable-console-print!))
 
+#?(:cljs
+   (defmethod cljs.test/report [:cljs.test/default :end-run-tests] [m]
+     (if (cljs.test/successful? m)
+       (.exit js/phantom 0)
+       (.exit js/phantom 1))))
+
 (defn -main
   "Entry point for running tests (until *.cljc tools catch up)"
   []
-  #?(:clj
-     (clojure.test/run-tests
-       'factui.impl.session-test
-       'factui.api-reactive-test
-       'factui.api-test)
-     :cljs
-     (cljs.test/run-tests
-       'factui.impl.session-test
-       'factui.api-reactive-test
-       'factui.api-test)))
+  (run-tests
+    'factui.impl.session-test
+    'factui.api-reactive-test
+    'factui.api-test))
 
 ;; Run tests at the root level, in CLJS
-#?(:cljs
-   (do (-main)
-       (.exit js/phantom)))
+#?(:cljs (-main))
 
 
 

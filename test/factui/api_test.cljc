@@ -98,7 +98,7 @@
                            :person/likes "Alcohol"}]))
 
 
-(api/defsession base ['factui.api-test] test-schema)
+(api/defsession base ['factui.api-test] test-schema ::session)
 
 (deftest simple-query
   (let [[s bindings] (api/transact base [{:db/id -99

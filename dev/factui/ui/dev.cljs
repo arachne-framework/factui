@@ -16,7 +16,6 @@
     :db/valueType :db.type/boolean
     :db/cardinality :db.cardinality/one}])
 
-
 (defn rand-string
   []
   (apply str (repeatedly (+ 5 (rand-int 10))
@@ -36,19 +35,11 @@
    [?task :task/title ?title]
    [?task :task/completed ?completed]])
 
-(def task-r-registry (atom {}))
-(f/defrule task-r
-  [?task :task/title ?title]
-  [?task :task/completed ?completed]
-  =>
-  (let [key [?task]]
-    (when-let [ch (get @task-r-registry key)]
-      (a/put! ch true))))
-
 (rum/defc Task < {:key-fn (fn [_ id] id)}
-                 (fr/query task-q task-r-registry)
+                 (fr/query task-q ::session)
                  rum/static
   [app-state ?task]
+  [:li (str "task:" ?task)]
   (let [[title completed] *results*]
     [:li
      [:span {:style {:cursor "pointer"
@@ -57,7 +48,7 @@
                          (fr/transact! app-state
                            [{:db/id ?task
                              :task/completed (not completed)}]))}
-      (if completed "TODO:" "DONE:")]
+      (if completed "DONE:" "TODO:")]
      " "
      title]))
 
@@ -66,16 +57,7 @@
    :where
    [?t :task/title ?title]])
 
-(def tasklist-r-registry (atom {}))
-(f/defrule tasklist-r
-  [?t :task/title ?title]
-  =>
-  (swap! clos inc)
-  (let [key []]
-    (when-let [ch (get @tasklist-r-registry key)]
-      (a/put! ch true))))
-
-(rum/defc TaskList < (fr/query tasklist-q tasklist-r-registry)
+(rum/defc TaskList < (fr/query tasklist-q ::session)
                      rum/static
   [app-state title]
   [:div
@@ -85,7 +67,7 @@
     "Add Task"]
    [:button {:on-click (fn []
                          (fr/transact! app-state (new-tasks 10)))}
-    "Add 100 Tasks"]
+    "Add 10 Tasks"]
    [:button {:on-click (fn []
                          (fr/transact! app-state (new-tasks 500)))}
     "Add 500 Tasks"]
@@ -96,7 +78,7 @@
           (Task app-state t))]
    ])
 
-(f/defsession base ['factui.ui.dev] schema)
+(f/defsession base ['factui.ui.dev] schema ::session)
 
 (def initial-data
   [{:task/title "Task A"

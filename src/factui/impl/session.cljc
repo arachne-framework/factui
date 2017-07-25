@@ -11,20 +11,24 @@
             [factui.impl.store :as store])
   #?(:clj (:import [factui.facts Datom])))
 
-(def ^:dynamic *store*
-  "Dynamic var used to convey an atom containing the store to the engine
-   internals. Depends on the engine internals running in the same thread as the
-   top-level API (true for the default implementation.)")
-(def ^:dynamic *bindings*
-  "Dynamic var used to convey an atom containing tempid bindings to the engine
-   internals. Depends on the engine internals running in the same thread as the
-   top-level API (true for the default implementation.)"  )
-(def ^:dynamic *tx-complete*
-  "Dynamic var used to supply a channel to the RHS of rules. A DatomSession
-   instance will be placed upon the channel whenever a transaction is complete
-   (that is, after rules have finished firing.)")
-(def ^:dynamic *session-id*
-  "Dynamic var used to pass the RHS of a rule with the curren session's ID")
+(def ^{:dynamic true
+       :doc "Dynamic var used to convey an atom containing the store to the
+engine internals. Depends on the engine internals running in the same thread as
+the top-level API (true for the default implementation.)"} *store*)
+
+(def ^{:dynamic true
+       :doc "Dynamic var used to convey an atom containing tempid bindings to
+the engine internals. Depends on the engine internals running in the same
+thread as the top-level API (true for the default implementation.)"} *bindings*)
+
+(def ^{:dynamic true
+       :doc "Dynamic var used to supply a channel to the RHS of rules. A
+DatomSession instance will be placed upon the channel whenever a transaction is
+complete (that is, after rules have finished firing.)"} *tx-complete*)
+
+(def ^{:dynamic true
+       :doc "Dynamic var used to pass the RHS of a rule with the curren
+session's ID"} *session-id*)
 
 (defn datom? [fact] (instance? Datom fact))
 
@@ -69,7 +73,7 @@
   (to-persistent! [listener]
     listener))
 
-(defrecord DatomSession [delegate store tx-complete session-id]
+(defrecord DatomSession [delegate store session-id]
   eng/ISession
   (insert [session facts]
     (let [{datoms true, other-facts false} (group-by datom? facts)
@@ -83,27 +87,28 @@
                          (eng/insert insert-datoms)
                          (eng/insert other-facts))
           @*store*
-          tx-complete
           session-id))))
 
   (retract [session facts]
     (binding [*store* (atom store)]
-      (DatomSession. (eng/retract delegate facts) @*store* tx-complete session-id)))
+      (DatomSession. (eng/retract delegate facts) @*store* session-id)))
 
   (fire-rules [session]
     (binding [*store* (atom store)
-              *tx-complete* tx-complete
+              *tx-complete* (a/chan)
               *session-id* session-id]
-      (let [sess (DatomSession. (eng/fire-rules delegate) @*store* tx-complete session-id)]
-        (a/put! tx-complete sess)
+      (let [sess (DatomSession. (eng/fire-rules delegate) @*store* session-id)]
+        (a/put! *tx-complete* sess)
+        (a/close! *tx-complete*)
         sess)))
 
   (fire-rules [session opts]
     (binding [*store* (atom store)
-              *tx-complete* tx-complete
+              *tx-complete* (a/chan)
               *session-id* session-id]
-      (let [sess (DatomSession. (eng/fire-rules delegate opts) @*store* tx-complete session-id)]
-        (a/put! tx-complete sess)
+      (let [sess (DatomSession. (eng/fire-rules delegate opts) @*store* session-id)]
+        (a/put! *tx-complete* sess)
+        (a/close! *tx-complete*)
         sess)))
 
   (query [session query params]
@@ -122,7 +127,7 @@
    with the specified Session ID."
   [base store id]
   (let [components (update (eng/components base) :listeners conj (DatomListener.))]
-    (DatomSession. (eng/assemble components) store (a/chan (a/dropping-buffer 1)) id)))
+    (DatomSession. (eng/assemble components) store id)))
 
 (defn- prep-txdata
   "Given Datomic txdata, return a tuple of [insert-datoms retract datoms]"
