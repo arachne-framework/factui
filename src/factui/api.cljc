@@ -1,32 +1,37 @@
 (ns factui.api
   (:require [factui.impl.session :as session]
             [factui.impl.store :as store]
-            #?(:clj [factui.impl.compiler :as comp])
-            #?(:clj [clara.rules :as cr]
-               :cljs [clara.rules :as cr :include-macros true])
-            #?(:clj [clara.rules.compiler :as com])
+   #?(:clj  [factui.impl.compiler :as comp])
+   #?(:clj  [clara.rules :as cr]
+      :cljs [clara.rules :as cr :include-macros true])
+   #?(:clj  [clara.rules.compiler :as com])
             [factui.specs :as fs]
             [factui.specs.clara :as cs]
             [factui.specs.datalog :as ds]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
-            #?(:clj [clojure.core.async :as a :refer [go go-loop <! >!]]
-               :cljs [cljs.core.async :as a :refer [<! >!]]))
+   #?(:clj  [clojure.core.async :as a :refer [go go-loop <! >!]]
+      :cljs [cljs.core.async :as a :refer [<! >!]])
+            [factui.facts :as f])
   #?(:cljs (:require-macros [cljs.core.async.macros :refer [go go-loop]])))
 
-;; TODO: Allow schema to be defined *not* at compile time. We could do it,
-;; would give a lot more operational flexibility.
-#?(:clj (defmacro defsession
-          "Define a new Datom session with the specified schema txdata, and
-           the specified session ID."
-          [name nses schema-txdata session-id]
-          (let [base (gensym)]
-            `(let [store# (store/store ~schema-txdata)]
-               (cr/defsession ~base ~@nses
-                 :fact-type-fn (store/fact-type-fn store#)
-                 :ancestors-fn (store/ancestors-fn store#)
-                 )
-               (def ~name (session/session ~base store# ~session-id))))))
+#?(:clj (defmacro rulebase
+          "Define a new immutable base session with the specified name, and
+           rules/queries loaded from the specified namespaces (as in Clara).
+           Rules are assembled and compiled at compile time.
+
+          This session should be converted to a FactUI session and a schema
+          installed before adding any data (see `factui.api/session`)."
+          [name & nses]
+          `(cr/defsession ~name ~@(map (fn [n] `(quote ~n)) nses)
+             :fact-type-fn f/fact-type-fn
+             :ancestors-fn f/ancestors-fn)))
+
+(defn session
+  "Given a base session (as defined by `factui.api/rule-base`), add in a
+   schema and return an initalized FactUI session."
+  [base schema-txdata session-id]
+  (session/session base (store/store schema-txdata) session-id))
 
 (defn with-id
   "Assign the session the given ID. Session IDs are used when registering

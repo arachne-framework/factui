@@ -64,7 +64,9 @@
 
 #?(:cljs (enable-console-print!))
 
-(api/defsession base ['factui.impl.session-test] test-schema ::session)
+(api/rulebase rulebase factui.impl.session-test)
+
+(def base (api/session rulebase test-schema ::session))
 
 (deftest basic-insertion
   (let [s (api/transact-all base [{:person/id 42

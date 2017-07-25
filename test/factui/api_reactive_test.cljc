@@ -43,7 +43,8 @@
    [?p :person/name ?name]
    [?p :person/id ?pid]])
 
-(api/defsession base ['factui.api-reactive-test] test-schema ::session)
+(api/rulebase rulebase factui.api-reactive-test)
+(def base (api/session rulebase test-schema ::session))
 
 #?(:clj
    (deftest simple-query

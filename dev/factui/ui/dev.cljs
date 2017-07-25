@@ -79,7 +79,7 @@
    ])
 
 
-(f/defsession base ['factui.ui.dev] schema ::session)
+(api/rulebase rulebase factui.ui.dev)
 
 (def initial-data
   [{:task/title "Task A"
@@ -91,7 +91,8 @@
 
 (defn ^:export main
   []
-  (let [app-state (fr/initialize
+  (let [base (f/session rulebase schema ::session)
+        app-state (fr/initialize
                     base
                     TaskList
                     (.getElementById js/document "root"))]

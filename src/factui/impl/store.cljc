@@ -260,28 +260,3 @@
       (attrs-with schema :db/cardinality :db.cardinality/one)
       (attrs-with schema :db/unique :db.unique/identity)
       (attrs-with schema :db/valueType :db.type/ref))))
-
-;; TODO: Plan
-;; Pass around the store, updating it and using it to filter whenever anythign is changed.
-;;   explicit/logical insertion
-;;   explicit/logical retraction
-
-(defn fact-type-fn
-  "Given a store, return a function that will return the type of a fact"
-  [store]
-  (fn [fact]
-    (let [t (type fact)]
-      (if (= Datom t)
-        (.-a fact)
-        t))))
-
-(defn ancestors-fn
-  "Given a store, return a function that will return the ancestors of a type"
-  [store]
-  ancestors
-  (let [h (make-hierarchy)]
-    (fn [type]
-      (if (keyword? type)
-        [Datom]
-        (ancestors type)))))
-
