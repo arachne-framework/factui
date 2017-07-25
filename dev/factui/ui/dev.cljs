@@ -70,10 +70,10 @@
 (f/defrule tasklist-r
   [?t :task/title ?title]
   =>
+  (swap! clos inc)
   (let [key []]
     (when-let [ch (get @tasklist-r-registry key)]
       (a/put! ch true))))
-
 
 (rum/defc TaskList < (fr/query tasklist-q tasklist-r-registry)
                      rum/static

@@ -9,18 +9,31 @@
             [factui.specs.clara :as cs]
             [factui.specs.datalog :as ds]
             [clojure.spec.alpha :as s]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            #?(:clj [clojure.core.async :as a :refer [go go-loop <! >!]]
+               :cljs [cljs.core.async :as a :refer [<! >!]]))
+  #?(:cljs (:require-macros [cljs.core.async.macros :refer [go go-loop]])))
 
+;; TODO: Allow schema to be defined *not* at compile time. We could do it,
+;; would give a lot more operational flexibility.
 #?(:clj (defmacro defsession
-          "Define a new Datom session with the specified schema txdata"
-          [name nses schema-txdata]
+          "Define a new Datom session with the specified schema txdata, and
+           the specified session ID."
+          [name nses schema-txdata session-id]
           (let [base (gensym)]
             `(let [store# (store/store ~schema-txdata)]
                (cr/defsession ~base ~@nses
                  :fact-type-fn (store/fact-type-fn store#)
                  :ancestors-fn (store/ancestors-fn store#)
                  )
-               (def ~name (session/session ~base store#))))))
+               (def ~name (session/session ~base store# ~session-id))))))
+
+(defn with-id
+  "Assign the session the given ID. Session IDs are used when registering
+   reactive queries; the reaction will only trigger for sessions with the
+   registered ID."
+  [session id]
+  (session/with-id session id))
 
 (defn now []
   #?(:cljs (.getTime (js/Date.))
@@ -110,15 +123,16 @@
 (s/fdef defquery :args ::fs/defquery-args)
 #?(:clj
    (defmacro defquery
-     "Define a Clara query using Datomic-style Datalog syntax."
+     "Define a Clara query using Datomic-style Datalog syntax.
+
+     The resulting query will have the following additional keys defined:
+
+     :factui/inputs - Vector of symbols used for the query's `:in` clause.
+     :factui/result-fn - A function that can be called on the return value
+                         from `clara.rules/query` to obtain Datomic-style results."
      [& args]
      (let [input (s/conform ::fs/defquery-args args)
-           ;_ (println "\n===========")
-           ;_ (clojure.pprint/pprint input)
            output (comp/compile input comp/compile-defquery)
-           ;_ (println "===========")
-           ;_ (clojure.pprint/pprint output)
-           ;_ (println "===========")
            clara (s/unform ::cs/defquery-args output)
            inputs (vec (::cs/query-params output))
            name (symbol (name (::cs/name output)))
@@ -127,17 +141,17 @@
           (let [~results-fn ~(datalog-results input)]
             (cr/defquery ~@clara)
             ~(if (com/compiling-cljs?)
-               `(set! ~name (assoc ~name ::inputs ~inputs
-                                         ::result-fn ~results-fn))
-               `(alter-var-root (var ~name) assoc ::inputs ~inputs
-                                                  ::result-fn ~results-fn)))))))
+               `(set! ~name (assoc ~name :factui/inputs ~inputs
+                                         :factui/result-fn ~results-fn))
+               `(alter-var-root (var ~name) assoc :factui/inputs ~inputs
+                                                  :factui/result-fn ~results-fn)))))))
 
 (defn query-raw
   "Run a query that was defined using FactUI, using positional inputs.
 
   Return unprocessed (Clara-style) results."
   [session query & args]
-  (let [inputs (::inputs query)
+  (let [inputs (:factui/inputs query)
         clara-args (interleave inputs args)]
     (apply cr/query session (:name query) clara-args)))
 
@@ -145,7 +159,7 @@
   "Given Clara-style results from a given query return Datomic-style results.
    Does not re-run the query."
   [query results]
-  (let [results-fn (::result-fn query)]
+  (let [results-fn (:factui/result-fn query)]
     (when-not results-fn
       (throw (ex-info "Query did not specify a find clause - perhaps it was a basic Clara query, not one defined by FactUI?" {:query query})))
     (results-fn results)))
@@ -168,3 +182,81 @@
            output (comp/compile input comp/compile-defrule)
            clara (s/unform ::cs/defrule-args output)]
        `(cr/defrule ~@clara))))
+
+;;TODO: Add an indentifier to sessions & registrations, to allow multiple concurrent registrations.
+;; Currently, a registration will fire whenever a rule is fired from *anywhere*.
+;; But sessions are immutable and forkable. So it makes sense to have a
+;; "session-id" so that you can identify a single "logical" session across time
+;; (or at least, one you want notifications on)
+
+(defn register
+  "Register a listener on a reactive query, for specific query inputs.
+   Whenever the query triggers, with matching values, the results will be placed
+   upon the returned results channel.
+
+   The listener will be de-registered when the results channel is closed."
+  [session-id q inputs]
+  (let [registry (:factui/registry q)
+        notify-ch (a/chan (a/dropping-buffer 1))
+        results-ch (a/chan (a/sliding-buffer 1))
+        registry-key [session-id (vec inputs)]]
+    (swap! registry assoc registry-key notify-ch)
+    (a/go-loop []
+      (let [session (<! (<! notify-ch))
+            results (apply query session q inputs)]
+        (if (>! results-ch results)
+          (recur)
+          (swap! registry dissoc registry-key))))
+    results-ch))
+
+(defn trigger
+  "Function called as the right hand site of a reactive query."
+  [registry input]
+  (let [tx-complete-ch session/*tx-complete*
+        session-id session/*session-id*]
+    (println "triggered for input:" input)
+    (when-let [notify-ch (get @registry [session-id input])]
+      (a/put! notify-ch tx-complete-ch))))
+
+#?(:clj
+   (defmacro defquery-reactive
+     "Define a reactive query. Arguments are the same as to `defquery`.
+
+     The resulting query will have the following keys, in addition to those
+     defined by `defquery`:
+
+     :factui/registry - An atom containing a map of input vectors to
+                        notification channels.
+     :factui/rule - A Clara rule with the same conditions as the underlying
+                    query query, which fires off a notification to
+                    corresponding notifcation channels every time the query
+                    changes."
+     [& args]
+     (let [input (s/conform ::fs/defquery-args args)
+           output (comp/compile input comp/compile-defquery)
+           inputs (vec (::cs/query-params output))
+           input-symbols (mapv (comp symbol name) inputs)
+           query-name (symbol (name (::cs/name output)))
+           results-fn (gensym)
+           registry-name (symbol (str *ns*)
+                           (str (name (::cs/name output)) "__registry"))
+           rule-name (symbol (str *ns*)
+                       (str (name (::cs/name output)) "__rule"))]
+       `(let [~results-fn ~(datalog-results input)]
+
+          (def ~registry-name (atom {}))
+
+          (cr/defrule ~rule-name
+            ~@(s/unform ::cs/lhs (::cs/lhs output))
+            ~'=>
+            (trigger ~registry-name ~input-symbols))
+
+          (cr/defquery ~@(s/unform ::cs/defquery-args output))
+
+          ~(let [factui-data `{:factui/inputs ~inputs
+                               :factui/result-fn ~results-fn
+                               :factui/rule ~rule-name
+                               :factui/registry ~registry-name}]
+             (if (com/compiling-cljs?)
+               `(set! ~query-name (merge ~query-name ~factui-data))
+               `(alter-var-root (var ~query-name) merge ~factui-data)))))))

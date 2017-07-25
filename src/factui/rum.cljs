@@ -9,7 +9,6 @@
 
 ;; TODO: Add pulse predicates, create demo of event handling
 
-
 ;; How to make it faster:
 
 ;; The expensive part is definitely the N queries, where N is the number of
@@ -33,7 +32,7 @@
 ;; Algo B: ONly a rule. The rule is smart enough to aggregate all "hits"
 ;; into a single result set, and notifies the correct component based on that.
 
-;; TODO: prove concept
+;; TODO: prove concept DONE
 ;; TODO: Write "reactive-query" macro (to combine the writing of the query & the rule)
 ;; TODO: Clean up. Don't require passing botgh query & registry. Pull out as much reactive utility code as possible.
 ;; TODO: Ensure figwheel reloading still works, ensure rum-static still works
@@ -43,16 +42,22 @@
    is, the query arguments)."
   [state query]
   (println "building registry key...")
-  (let [num-inputs (count (:factui.api/inputs query))]
+  (let [num-inputs (count (:factui/inputs query))]
     ;; The first N Rum arguments, after the app state. Could improve this logic, maybe?
     (vec (take num-inputs (drop 1 (:rum/args state))))))
 
 (defn- deregister
   "Deregister a Rum mixin from an active query"
   [state query registry]
-
-  state
-  )
+  (let [k (registry-key state query)]
+    (println "deregistering:" k)
+    (swap! registry
+      (fn [r]
+        (if-let [ch (get r k)]
+          (do (a/close! ch)
+              (dissoc r k))
+          r))))
+  (dissoc state ::registered-args))
 
 (defn- listener
   "Given a Rum component's state, return a channel. When any value is put upon

@@ -7,7 +7,7 @@
   :source-paths ["dev" "src"]
   :profiles {:test {:plugins [[lein-shell "0.4.0" :exclusions [org.clojure/clojure]]
                               [lein-cljsbuild "1.1.6" :exclusions [org.clojure/clojure]]]
-                    :cljsbuild {:builds [{:id "figwheel"
+                    :cljsbuild {:builds [{:id "dev-figwheel"
                                           :source-paths ["src" "dev"]
                                           :figwheel {:on-jsload "factui.rum/refresh"}
                                           :compiler {:main factui.ui.dev
