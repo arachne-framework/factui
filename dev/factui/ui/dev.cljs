@@ -39,7 +39,6 @@
                  (fr/query task-q ::session)
                  rum/static
   [app-state ?task]
-  [:li (str "task:" ?task)]
   (let [[title completed] *results*]
     [:li
      [:span {:style {:cursor "pointer"
@@ -57,11 +56,12 @@
    :where
    [?t :task/title ?title]])
 
+
 (rum/defc TaskList < (fr/query tasklist-q ::session)
                      rum/static
-  [app-state title]
+  [app-state]
   [:div
-   [:h1 title]
+   [:h1 "Task List"]
    [:button {:on-click (fn []
                          (fr/transact! app-state (new-tasks 1)))}
     "Add Task"]
@@ -78,6 +78,7 @@
           (Task app-state t))]
    ])
 
+
 (f/defsession base ['factui.ui.dev] schema ::session)
 
 (def initial-data
@@ -90,13 +91,8 @@
 
 (defn ^:export main
   []
-
-
-  (let [app-state (fr/app-state base)
-        root (.getElementById js/document "root")]
-
-    (fr/transact! app-state initial-data)
-
-    (rum/mount (TaskList app-state "Tasks") root)
-
-    ))
+  (let [app-state (fr/initialize
+                    base
+                    TaskList
+                    (.getElementById js/document "root"))]
+    (fr/transact! app-state initial-data)))

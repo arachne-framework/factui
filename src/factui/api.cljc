@@ -173,6 +173,7 @@
 
 (s/fdef defrule :args ::fs/defrule-args)
 
+
 #?(:clj
    (defmacro defrule
      "Define a Clara rule. The left hand side may contain both Clara-style and
@@ -249,7 +250,7 @@
                        (str (name (::cs/name output)) "__rule"))]
        `(let [~results-fn ~(datalog-results input)]
 
-          (def ~registry-name (atom {}))
+          (defonce ~registry-name (atom {}))
 
           (cr/defrule ~rule-name
             ~@(s/unform ::cs/lhs (::cs/lhs output))

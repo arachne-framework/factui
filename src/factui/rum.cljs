@@ -82,6 +82,7 @@
       (deregister query session-id)
       (register query session-id))))
 
+
 (def ^:dynamic *results*)
 
 ;; Defines the following keys in the Rum state:
@@ -127,17 +128,22 @@
                      :session new-session
                      :bindings bindings))))))
 
-(def ^:private version (atom 0))
+(defonce ^:private version (atom 0))
 
-(defn app-state
-  "Build and return an initial app-state atom, based on the provided FactUI
-   session"
-  [base]
-  (let [app-state (atom {:session base
-                         :version 0})]
+
+(defn initialize
+  "Start application rendering to the given root node, given a base Clara session"
+  [base-session root-component root-element]
+  (let [app-state (atom {:session base-session})]
+
+    (rum/mount (root-component app-state) root-element)
+
     (add-watch version :version-watch
       (fn [_ _ _ version]
-        (swap! app-state assoc :version version)))
+
+        (rum/mount (root-component (atom {:session (:session @app-state)})) root-element)
+
+        ))
     app-state))
 
 (defn refresh
