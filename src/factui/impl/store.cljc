@@ -75,17 +75,22 @@
 (defn- card-one?
   "Efficiently check if a given attr is card-one?"
   [store attr]
-  (contains? (:card-one-attrs store) attr))
+  (contains? (:card-one-attrs (:attrs store)) attr))
 
 (defn- identity?
   "Efficiently check if a given attr is an identity attr"
   [store attr]
-  (contains? (:identity-attrs store) attr))
+  (contains? (:identity-attrs (:attrs store)) attr))
 
 (defn- ref?
   "Efficiently check if a given attr is a ref"
   [store attr]
-  (contains? (:ref-attrs store) attr))
+  (contains? (:ref-attrs (:attrs store)) attr))
+
+(defn- component?
+  "Efficiently check if a given attr is a component"
+  [store attr]
+  (contains? (:ref-attrs (:attrs store)) attr))
 
 (defn- has?
   "Check if the store contains a datom"
@@ -250,6 +255,14 @@
       [r op]
       [op])))
 
+(defn- retract-operation
+  "Expand a :db/retract operation to include all additional retractions
+   implied by :db/isComponent."
+  [store [_ e a v :as op]]
+  (if (component? store a)
+    [op [:db.fn/retractEntity v]]
+    [op]))
+
 (defn expand-operation
   "Expand an operation into basic add/retract operations. Includes logic for
    replacing/retracting card-one attributes and eliminating duplicate facts.
@@ -259,7 +272,7 @@
   [store op]
   (case (first op)
     :db/add (add-operation store op)
-    :db/retract [op]
+    :db/retract (retract-operation store op)
     :db.fn/retractEntity (retract-entity-ops store (second op))
     (throw (ex-info (str "Unknown txdata operation " (first op))
              {:op op}))))
@@ -269,7 +282,7 @@
   [[_ e a v]]
   (f/->Datom e a v))
 
-(defrecord SimpleStore [schema index identities card-one-attrs identity-attrs ref-attrs]
+(defrecord SimpleStore [schema index identities attrs]
   Store
   (resolve [store txdata]
     (let [ops (txdata/operations txdata)
@@ -316,6 +329,7 @@
   [schema-txdata]
   (let [schema (build-schema (concat base-schema schema-txdata))]
     (->SimpleStore schema {} {}
-      (attrs-with schema :db/cardinality :db.cardinality/one)
-      (attrs-with schema :db/unique :db.unique/identity)
-      (attrs-with schema :db/valueType :db.type/ref))))
+      {:card-one-attrs (attrs-with schema :db/cardinality :db.cardinality/one)
+       :identity-attrs (attrs-with schema :db/unique :db.unique/identity)
+       :ref-attrs (attrs-with schema :db/valueType :db.type/ref)
+       :component-attrs (attrs-with schema :db/isComponent true)})))

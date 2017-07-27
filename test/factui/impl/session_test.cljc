@@ -27,7 +27,26 @@
     :db/cardinality :db.cardinality/one}
    {:db/ident :person/friends
     :db/valueType :db.type/ref
-    :db/cardinality :db.cardinality/many}])
+    :db/cardinality :db.cardinality/many}
+   {:db/ident :person/limbs
+    :db/valueType :db.type/ref
+    :db/isComponent true
+    :db/cardinality :db.cardinality/many}
+   {:db/ident :person/head
+    :db/valueType :db.type/ref
+    :db/isComponent true
+    :db/cardinality :db.cardinality/one}
+
+
+   {:db/ident :limb/name
+    :db/valueType :db.type/string
+    :db/cardinality :db.cardinality/one}
+   {:db/ident :limb/sublimb
+    :db/valueType :db.type/ref
+    :db/isComponent true
+    :db/cardinality :db.cardinality/many}
+
+   ])
 
 (api/defquery-static person-by-pid
   [:find ?a ?v
@@ -288,6 +307,54 @@
     (let [s2 (api/transact-all s1 [[:db.fn/retractEntity eid]])
           r2 (api/query s2 all-attrs eid)]
       (is (empty? r2)))))
+
+(deftest retract-component
+  (let [[s1 bindings] (api/transact base
+                        [{:db/id -1
+                          :person/name "Luke"
+                          :person/limbs [{:db/id -100
+                                          :limb/name "left-arm"
+                                          :limb/sublimb [{:db/id -101
+                                                          :limb/name "left thumb"}
+                                                         {:db/id -102
+                                                          :limb/name "left index finger"}]}]}])
+        person (api/query s1 all-attrs (bindings -1))
+        left-arm (api/query s1 all-attrs (bindings -100))
+        left-thumb (api/query s1 all-attrs (bindings -101))
+        left-finger (api/query s1 all-attrs (bindings -102))]
+    (is (= person #{[(bindings -1) :person/name "Luke"]
+                    [(bindings -1) :person/limbs (bindings -100)]}))
+    (is (= left-arm #{[(bindings -100) :limb/name "left-arm"]
+                      [(bindings -100) :limb/sublimb (bindings -101)]
+                      [(bindings -100) :limb/sublimb (bindings -102)]}))
+    (is (= left-thumb #{[(bindings -101) :limb/name "left thumb"]}))
+    (is (= left-finger #{[(bindings -102) :limb/name "left index finger"]}))
+
+    (let [s2 (api/transact-all s1 [[:db.fn/retractEntity (bindings -1)]])]
+      (is (empty? (api/query s2 all-attrs (bindings -1))))
+      (is (empty? (api/query s2 all-attrs (bindings -100))))
+      (is (empty? (api/query s2 all-attrs (bindings -101))))
+      (is (empty? (api/query s2 all-attrs (bindings -102)))))))
+
+(deftest replace-component
+  (let [[s1 bindings] (api/transact base
+                        [{:db/id -1
+                          :person/name "Luke"
+                          :person/head {:db/id -100
+                                        :limb/name "head"}}])
+        person (api/query s1 all-attrs (bindings -1))
+        head (api/query s1 all-attrs (bindings -100))]
+    (is (= person #{[(bindings -1) :person/name "Luke"]
+                    [(bindings -1) :person/head (bindings -100)]}))
+    (is (= head #{[(bindings -100) :limb/name "head"]}))
+
+    (let [[s2 bindings2] (api/transact s1 [{:db/id (bindings -1)
+                                            :person/head {:db/id -200
+                                                          :limb/name "replacemen head"}}])]
+      (is (= #{[(bindings 1) :person/name "Luke"]
+               [(bindings 1) :person/head (bindings2 -200)]}))
+
+      (is (empty? (api/query s2 all-attrs (bindings -100)))))))
 
   ; Known problematic scenario:
   ;
