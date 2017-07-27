@@ -29,10 +29,12 @@
     :db/valueType :db.type/ref
     :db/cardinality :db.cardinality/many}])
 
-(cr/defquery person-by-pid
-  [:?pid]
-  [:person/id [{:keys [e v]}] (= e ?p) (= v ?pid)]
-  [Datom (= e ?p) (= a ?a) (= v ?v)])
+(api/defquery-static person-by-pid
+  [:find ?a ?v
+   :in ?pid
+   :where
+   [?e :person/id ?pid]
+   [?e ?a ?v]])
 
 (cr/defrule popeye-likes-spinach
   [:person/name [{:keys [e v]}] (= e ?e) (= v "Popeye")]
@@ -54,6 +56,12 @@
   (api/transact-logical! [{:db/id ?e
                            :person/likes "tea"}]))
 
+(api/defquery-static all-attrs
+  [:find ?e ?a ?v
+    :in ?e
+    :where
+    [?e ?a ?v]])
+
 (defrecord PersonRecord [id name])
 
 (cr/defrule entities-from-records
@@ -65,16 +73,15 @@
 #?(:cljs (enable-console-print!))
 
 (api/rulebase rulebase factui.impl.session-test)
-
 (def base (api/session rulebase test-schema ::session))
 
 (deftest basic-insertion
   (let [s (api/transact-all base [{:person/id 42
                                    :person/name "Luke"}])
-        results (cr/query s person-by-pid :?pid 42)]
-    (is (= (set (map #(select-keys % [:?a :?v]) results))
-          #{{:?a :person/name :?v "Luke"}
-            {:?a :person/id :?v 42}}))))
+        results (api/query s person-by-pid 42)]
+    (is (= results
+           #{[:person/name "Luke"]
+             [:person/id 42]}))))
 
 (deftest tempids-resolve-to-same-entity
   (let [[s bindings] (api/transact base [{:db/id -47
@@ -82,13 +89,12 @@
                                          {:db/id -47
                                           :person/id 42
                                           :person/age 32}])
-        results (cr/query s person-by-pid :?pid 42)
+        results (api/query s person-by-pid 42)
         eid (bindings -47)]
-    (is (every? #(= eid (:?p %)) results))
-    (is (= (set (map #(select-keys % [:?a :?v]) results))
-          #{{:?a :person/name :?v "Luke"}
-            {:?a :person/age :?v 32}
-            {:?a :person/id :?v 42}}))))
+    (is (= results
+          #{[:person/name "Luke"]
+            [:person/age 32]
+            [:person/id 42]}))))
 
 (deftest tempids-as-ref-values
   (testing "same transaction"
@@ -99,11 +105,11 @@
                                            {:db/id -2
                                             :person/id 43
                                             :person/name "Joe"}])
-          results (cr/query s person-by-pid :?pid 42)]
-      (is (= (set (map #(select-keys % [:?a :?v]) results))
-            #{{:?a :person/name :?v "Luke"}
-              {:?a :person/id :?v 42}
-              {:?a :person/friends :?v (bindings -2)}}))))
+          results (api/query s person-by-pid 42)]
+      (is (= results
+            #{[:person/name "Luke"]
+              [:person/id 42]
+              [:person/friends (bindings -2)]}))))
   (testing "upsert (same tx)"
     (let [[s bindings] (api/transact base [{:person/id 42
                                             :person/name "Luke"
@@ -111,11 +117,11 @@
                                            {:db/id -2
                                             :person/id 43
                                             :person/name "Joe"}])
-          results (cr/query s person-by-pid :?pid 42)]
-      (is (= (set (map #(select-keys % [:?a :?v]) results))
-            #{{:?a :person/name :?v "Luke"}
-              {:?a :person/id :?v 42}
-              {:?a :person/friends :?v (bindings -2)}}))))
+          results (api/query s person-by-pid 42)]
+      (is (= results
+            #{[:person/name "Luke"]
+              [:person/id 42]
+              [:person/friends (bindings -2)]}))))
   (testing "upsert (different tx)"
     (let [[s bindings] (api/transact base [{:db/id -2
                                             :person/id 43
@@ -123,11 +129,11 @@
           [s _] (api/transact s [{:person/id 42
                                   :person/name "Luke"
                                   :person/friends {:person/id 43}}])
-          results (cr/query s person-by-pid :?pid 42)]
-      (is (= (set (map #(select-keys % [:?a :?v]) results))
-            #{{:?a :person/name :?v "Luke"}
-              {:?a :person/id :?v 42}
-              {:?a :person/friends :?v (bindings -2)}})))))
+          results (api/query s person-by-pid 42)]
+      (is (= results
+            #{[:person/name "Luke"]
+              [:person/id 42]
+              [:person/friends (bindings -2)]})))))
 
 (deftest identity-attribute-resolution
   (testing "same transaction"
@@ -135,30 +141,28 @@
                                      :person/name "Luke"}
                                     {:person/id 42
                                      :person/age 32}])
-          results (cr/query s person-by-pid :?pid 42)]
-      (is (= 1 (count (set (map :?p results)))))
-      (is (= (set (map #(select-keys % [:?a :?v]) results))
-             #{{:?a :person/name :?v "Luke"}
-               {:?a :person/age :?v 32}
-               {:?a :person/id :?v 42}}))))
+          results (api/query s person-by-pid 42)]
+      (is (= results
+            #{[:person/name "Luke"]
+              [:person/id 42]
+              [:person/age 32]}))))
   (testing "different transactions"
     (let [s (api/transact-all base [{:person/id 42
                                       :person/name "Luke"}]
                                    [{:person/id 42
                                      :person/age 32}])
-          results (cr/query s person-by-pid :?pid 42)]
-      (is (= 1 (count (set (map :?p results)))))
-      (is (= (set (map #(select-keys % [:?a :?v]) results))
-             #{{:?a :person/name :?v "Luke"}
-               {:?a :person/age :?v 32}
-               {:?a :person/id :?v 42}})))))
+          results (api/query s person-by-pid 42)]
+      (is (= results
+            #{[:person/name "Luke"]
+              [:person/id 42]
+              [:person/age 32]})))))
 
 (deftest no-duplicate-facts
   (let [s (api/transact-all base [{:person/id 42
                                    :person/name "Luke"}]
                                  [{:person/id 42
                                    :person/name "Luke"}])
-        results (cr/query s person-by-pid :?pid 42)]
+        results (api/query-raw s person-by-pid 42)]
     (is (= 2 (count results)))))
 
 (deftest card-many
@@ -166,31 +170,32 @@
                                    :person/likes #{"beer" "meat"}}]
                                   [{:person/id 42
                                     :person/likes #{"cheese"}}])
-        results (cr/query s person-by-pid :?pid 42)]
-    (is (= (set (map #(select-keys % [:?a :?v]) results))
-           #{{:?a :person/id :?v 42}
-             {:?a :person/likes :?v "beer"}
-             {:?a :person/likes :?v "cheese"}
-             {:?a :person/likes :?v "meat"}}))))
+        results (api/query s person-by-pid 42)]
+    (is (= results
+          #{[:person/id 42]
+            [:person/likes "beer"]
+            [:person/likes "cheese"]
+            [:person/likes "meat"]}))))
 
 (deftest card-one
   (let [s (api/transact-all base [{:person/id 42
                                    :person/name "Luke"}]
                                  [{:person/id 42
                                   :person/name "Lukas"}])
-        results (cr/query s person-by-pid :?pid 42)]
-    (is (= (set (map #(select-keys % [:?a :?v]) results))
-           #{{:?a :person/name :?v "Lukas"}
-             {:?a :person/id :?v 42}}))))
+        results (api/query s person-by-pid 42)]
+    (is (= results
+          #{[:person/name "Lukas"]
+            [:person/id 42]}))))
 
 (deftest basic-logic
-  (let [s (api/transact-all base [{:person/id 42
-                                   :person/name "Popeye"}])
-        results (cr/query s person-by-pid :?pid 42)]
-    (is (= (set (map #(select-keys % [:?a :?v]) results))
-          #{{:?a :person/name :?v "Popeye"}
-            {:?a :person/id :?v 42}
-            {:?a :person/likes :?v "spinach"}}))))
+  (let [[s bindings] (api/transact base [{:db/id -42
+                                         :person/id 42
+                                         :person/name "Popeye"}])
+        results (api/query s person-by-pid 42)]
+    (is (= results
+          #{[:person/name "Popeye"]
+            [:person/id 42]
+            [:person/likes "spinach"]}))))
 
 (deftest duplicate-entailed-facts
   (testing "implied followed by explicit (separate transactions)"
@@ -198,7 +203,7 @@
                                      :person/name "Popeye"}]
                                    [{:person/id 42
                                      :person/likes "spinach"}])
-          results (cr/query s person-by-pid :?pid 42)]
+          results (api/query-raw s person-by-pid 42)]
       (is (= 3 (count results)))))
   (testing "implied and explicit in same transaction"
     (let [s (api/transact-all base [{:person/id 42
@@ -206,14 +211,14 @@
                                      :person/likes "spinach"}]
               [{:person/id 42
                 :person/likes "spinach"}])
-          results (cr/query s person-by-pid :?pid 42)]
+          results (api/query-raw s person-by-pid 42)]
       (is (= 3 (count results)))))
   (testing "explicit followed by implied"
     (let [s (api/transact-all base [{:person/id 42
                                      :person/likes "spinach"}]
                                    [{:person/id 42
                                      :person/name "Popeye"}])
-          results (cr/query s person-by-pid :?pid 42)]
+          results (api/query-raw s person-by-pid 42)]
       (is (= 3 (count results))))))
 
 (deftest simple-retraction
@@ -223,31 +228,31 @@
                                           :person/likes #{"vinegar"}}])
         eid (bindings -99)
         [s2 _] (api/transact s [[:db/retract eid :person/likes "vinegar"]])
-        results1 (cr/query s person-by-pid :?pid 42)
-        results2 (cr/query s2 person-by-pid :?pid 42)]
-    (is (= (set (map #(select-keys % [:?a :?v]) results1))
-          #{{:?a :person/name :?v "Luke"}
-            {:?a :person/id :?v 42}
-            {:?a :person/likes :?v "vinegar"}}))
-    (is (= (set (map #(select-keys % [:?a :?v]) results2))
-          #{{:?a :person/name :?v "Luke"}
-            {:?a :person/id :?v 42}}))))
+        results1 (api/query s person-by-pid 42)
+        results2 (api/query s2 person-by-pid 42)]
+    (is (= results1
+          #{[:person/name "Luke"]
+            [:person/id 42]
+            [:person/likes "vinegar"]}))
+    (is (= results2
+          #{[:person/name "Luke"]
+            [:person/id 42]}))))
 
 (deftest logical-retractions
   (let [s (api/transact-all base [{:person/id 42
                                    :person/name "Locutus"}])
-        results (cr/query s person-by-pid :?pid 42)]
-    (is (= (set (map #(select-keys % [:?a :?v]) results))
-          #{{:?a :person/name :?v "Locutus"}
-            {:?a :person/id :?v 42}
-            {:?a :person/likes :?v "assimilation"}}))
+        results (api/query s person-by-pid  42)]
+    (is (= results
+          #{[:person/name "Locutus"]
+            [:person/id 42]
+            [:person/likes "assimilation"]}))
     (let [s2 (api/transact-all s [{:person/id 42
                                    :person/name "Picard"}])
-          results2 (cr/query s2 person-by-pid :?pid 42)]
-      (is (= (set (map #(select-keys % [:?a :?v]) results2))
-            #{{:?a :person/name :?v "Picard"}
-              {:?a :person/id :?v 42}
-              {:?a :person/likes :?v "tea"}})))))
+          results2 (api/query s2 person-by-pid 42)]
+      (is (= results2
+            #{[:person/name "Picard"]
+              [:person/id 42]
+              [:person/likes "tea"]})))))
 
 (deftest non-datom-facts
   (let [s (cr/insert base (->PersonRecord 69 "Alex"))
@@ -268,6 +273,21 @@
         (is (= (set (map #(select-keys % [:?a :?v]) results))
               #{{:?a :person/name :?v "Alejandro"}
                 {:?a :person/id :?v 69}}))))))
+
+#_(deftest retract-entity
+  (let [[s1 bindings] (api/transact base [{:db/id -42
+                                           :person/id 42
+                                           :person/name "Luke"
+                                           :person/likes ["Cheese" "Beer"]}])
+        eid (bindings -42)
+        r1 (api/query s1 all-attrs eid)]
+    (is (= r1 #{[eid :person/id 42]
+                [eid :person/name "Luke"]
+                [eid :person/likes "Cheese"]
+                [eid :person/likes "Beer"]}))
+    (let [s2 (api/transact-all s1 [[:db.fn/retractEntity eid]])
+          r2 (api/query s2 all-attrs eid)]
+      (is (= nil r2)))))
 
   ; Known problematic scenario:
   ;
@@ -291,3 +311,11 @@
 
   ; The rule of thumb is pretty simple: never explicitly assert a fact
   ; that can also be logically asserted.
+
+
+;;; TODO: Make sure that a rule that overwrites the result of another rule in the same session applies in the proper order.
+
+
+
+
+

@@ -10,9 +10,8 @@
 (defprotocol Store
   (update [this insert-datoms retract-datoms]
     "Update the store by inserting and retracting the specified concrete datoms (such as those returned by `resolve`).")
-  (resolve [this datoms]
-    "Given a seq of datoms (which may contain temporary IDs), resolve against
-    the existing contents of the store to return a 3-tuple of:
+  (resolve [this operations]
+    "Given a seq of Datomid operations, resolve against the existing contents of the store to return a 3-tuple of:
 
     1. concrete tuples to add
     2. concrete tuples to remove
@@ -217,14 +216,34 @@
                      datoms)]
     [new-datoms bindings]))
 
+(defn- op-datoms
+  "Given a single operation, return a tuple of [insert-datoms retract-datoms]"
+  [store [op & args]]
+  (case op
+    :db/add [[(apply f/->Datom args)] nil]
+    :db/retract [nil [(apply f/->Datom args)]]
+    (throw (ex-info (str "Unknown txdata operation " op)
+             {:op op :args args}))))
+
+;; TODO: add :db.fn/retractEntity
+
+(defn- operations-datoms
+  "Given a sequence of operations, return a tuple of [insert-datoms
+   retract-datoms], with all operations expanded to datoms. Does not resolve
+   tempids."
+  [store operations]
+  (let [results (map #(op-datoms store %) operations)]
+    [(mapcat first results)
+     (mapcat second results)]))
+
 (defrecord SimpleStore [schema index identities card-one-attrs identity-attrs ref-attrs]
   Store
-  (resolve [store datoms]
-    (let [[datoms bindings] (resolve-tempids store datoms)
-          datoms (filter #(not (has? store %)) datoms)
-          retractions (keep #(replaces store %) datoms)]
-      [datoms retractions bindings]))
-
+  (resolve [store operations]
+    (let [[insert-datoms retract-datoms] (operations-datoms store operations)
+          [insert-datoms bindings] (resolve-tempids store insert-datoms)
+          insert-datoms (filter #(not (has? store %)) insert-datoms)
+          retract-datoms (concat retract-datoms (keep #(replaces store %) insert-datoms))]
+      [insert-datoms retract-datoms bindings]))
   (update [store insert-datoms retract-datoms]
     (let [store (index-retractions store retract-datoms)
           store (index-insertions store insert-datoms)

@@ -126,6 +126,8 @@
 
 
 (s/fdef defquery :args ::fs/defquery-args)
+(s/fdef defquery-static :args ::fs/defquery-args)
+
 #?(:clj
    (defmacro defquery-static
      "Define a basic Clara query using Datomic-style Datalog syntax.

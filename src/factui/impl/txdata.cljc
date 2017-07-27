@@ -66,9 +66,8 @@
     :list [(s/unform ::list txitem)]
     :map (second (map->lists txitem))))
 
-(defn txdata
-  "Given Datomic-style txdata, convert to a set of :db/add or :db/retract
-   tuples.
+(defn operations
+  "Given Datomic-style txdata, convert to a set of operation tuples.
 
    If an entity ID is a positive integer, it is presumed to be a concrete
    entity ID, otherwise it will be treated as a tempid."

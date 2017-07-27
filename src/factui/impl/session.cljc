@@ -17,11 +17,6 @@ engine internals. Depends on the engine internals running in the same thread as
 the top-level API (true for the default implementation.)"} *store*)
 
 (def ^{:dynamic true
-       :doc "Dynamic var used to convey an atom containing tempid bindings to
-the engine internals. Depends on the engine internals running in the same
-thread as the top-level API (true for the default implementation.)"} *bindings*)
-
-(def ^{:dynamic true
        :doc "Dynamic var used to supply a channel to the RHS of rules. A
 DatomSession instance will be placed upon the channel whenever a transaction is
 complete (that is, after rules have finished firing.)"} *tx-complete*)
@@ -76,18 +71,8 @@ session's ID"} *session-id*)
 (defrecord DatomSession [delegate store session-id]
   eng/ISession
   (insert [session facts]
-    (let [{datoms true, other-facts false} (group-by datom? facts)
-          resolved (store/resolve store datoms)
-          [insert-datoms retract-datoms bindings] resolved]
-      (when #?(:clj (bound? #'*bindings*)
-               :cljs *bindings*) (swap! *bindings* merge bindings))
-      (binding [*store* (atom store)]
-        (DatomSession. (-> delegate
-                         (eng/retract retract-datoms)
-                         (eng/insert insert-datoms)
-                         (eng/insert other-facts))
-          @*store*
-          session-id))))
+    (binding [*store* (atom store)]
+      (DatomSession. (eng/insert delegate facts) @*store* session-id)))
 
   (retract [session facts]
     (binding [*store* (atom store)]
@@ -117,11 +102,6 @@ session's ID"} *session-id*)
   (components [session]
     (eng/components delegate)))
 
-(defn- datom
-  "Given a :db/add or :db/retraction operation, create a Datom record"
-  [[_ e a v]]
-  (f/->Datom e a v))
-
 (defn session
   "Create a new Datom Session from the given underlying session and store,
    with the specified Session ID."
@@ -129,36 +109,26 @@ session's ID"} *session-id*)
   (let [components (update (eng/components base) :listeners conj (DatomListener.))]
     (DatomSession. (eng/assemble components) store id)))
 
-(defn- prep-txdata
-  "Given Datomic txdata, return a tuple of [insert-datoms retract datoms]"
-  [txdata]
-  (let [ops (txdata/txdata txdata)
-        ;;TODO: support ops other than :db/add and :db/retract
-        ops-by-type (group-by first ops)
-        insertions (map datom (:db/add ops-by-type))
-        retractions (map datom (:db/retract ops-by-type))]
-    [insertions retractions]))
-
 (defn transact
   "Given Datomic-style txdata, transact it to the session.
 
    Returns a tuple of the new session and a map of tempids to resulting entity
    IDs."
   [session txdata]
-  (binding [*bindings* (atom {})]
-    (let [[insertions retractions] (prep-txdata txdata)
-          new-session (-> session
-                        (eng/retract retractions)
-                        (eng/insert insertions)
-                        (eng/fire-rules))]
-      [new-session @*bindings*])))
+  (let [ops (txdata/operations txdata)
+        [insertions retractions bindings] (store/resolve (.-store session) ops)
+        new-session (-> session
+                      (eng/retract retractions)
+                      (eng/insert insertions)
+                      (eng/fire-rules))]
+    [new-session bindings]))
 
 (defn transact!
   "Function to add data, from the body of a rule."
   [txdata logical?]
   (let [store @*store*
-        [insertions retractions] (prep-txdata txdata)
-        [insert-datoms retract-datoms _] (store/resolve store insertions)]
+        ops (txdata/operations txdata)
+        [insert-datoms retract-datoms _] (store/resolve store ops)]
     (eng/retract-facts! retract-datoms)
     (eng/insert-facts! insert-datoms (not logical?))))
 
