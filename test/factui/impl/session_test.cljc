@@ -67,8 +67,8 @@
 (cr/defrule entities-from-records
   [?pr <- PersonRecord]
   =>
-  (cr/insert! (f/->Datom -99 :person/id (:id ?pr))
-              (f/->Datom -99 :person/name (:name ?pr))))
+  (api/transact! [{:person/id (:id ?pr)
+                   :person/name (:name ?pr)}]))
 
 #?(:cljs (enable-console-print!))
 
@@ -257,24 +257,24 @@
 (deftest non-datom-facts
   (let [s (cr/insert base (->PersonRecord 69 "Alex"))
         s (cr/fire-rules s)
-        results (cr/query s person-by-pid :?pid 69)]
+        results (api/query-raw s person-by-pid 69)]
     (is (= (set (map #(select-keys % [:?a :?v]) results))
           #{{:?a :person/name :?v "Alex"}
             {:?a :person/id :?v 69}}))
     (testing "duplicate prevention"
       (let [s (api/transact-all s [{:person/id 69
                                     :person/name "Alex"}])
-            results (cr/query s person-by-pid :?pid 69)]
+            results (api/query-raw s person-by-pid 69)]
         (is (= 2 (count (set results))))))
     (testing "overwriting card-one"
       (let [s (api/transact-all s [{:person/id 69
                                     :person/name "Alejandro"}])
-            results (cr/query s person-by-pid :?pid 69)]
+            results (api/query-raw s person-by-pid 69)]
         (is (= (set (map #(select-keys % [:?a :?v]) results))
               #{{:?a :person/name :?v "Alejandro"}
                 {:?a :person/id :?v 69}}))))))
 
-#_(deftest retract-entity
+(deftest retract-entity
   (let [[s1 bindings] (api/transact base [{:db/id -42
                                            :person/id 42
                                            :person/name "Luke"
@@ -287,7 +287,7 @@
                 [eid :person/likes "Beer"]}))
     (let [s2 (api/transact-all s1 [[:db.fn/retractEntity eid]])
           r2 (api/query s2 all-attrs eid)]
-      (is (= nil r2)))))
+      (is (empty? r2)))))
 
   ; Known problematic scenario:
   ;

@@ -115,8 +115,7 @@ session's ID"} *session-id*)
    Returns a tuple of the new session and a map of tempids to resulting entity
    IDs."
   [session txdata]
-  (let [ops (txdata/operations txdata)
-        [insertions retractions bindings] (store/resolve (.-store session) ops)
+  (let [[insertions retractions bindings] (store/resolve (.-store session) txdata)
         new-session (-> session
                       (eng/retract retractions)
                       (eng/insert insertions)
@@ -127,8 +126,7 @@ session's ID"} *session-id*)
   "Function to add data, from the body of a rule."
   [txdata logical?]
   (let [store @*store*
-        ops (txdata/operations txdata)
-        [insert-datoms retract-datoms _] (store/resolve store ops)]
+        [insert-datoms retract-datoms _] (store/resolve store txdata)]
     (eng/retract-facts! retract-datoms)
     (eng/insert-facts! insert-datoms (not logical?))))
 

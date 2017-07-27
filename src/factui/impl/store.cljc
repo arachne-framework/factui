@@ -3,7 +3,8 @@
   (:require #?(:cljs [factui.facts :as f :refer [Datom]]
                :clj [factui.facts :as f])
             #?(:cljs [cljs.core :as c]
-               :clj [clojure.core :as c]))
+               :clj [clojure.core :as c])
+           [factui.impl.txdata :as txdata])
   (:refer-clojure :exclude [update resolve])
   #?(:clj (:import [factui.facts Datom])))
 
@@ -88,18 +89,19 @@
 
 (defn- has?
   "Check if the store contains a datom"
-  [store {:keys [e a v]}]
+  [store e a v]
   (when-let [val (get-in store [:index e a])]
     (or (= val v) (and (set? val) (contains? val v)))))
 
-(defn- replaces
-  "Return any datom that would be replaced by the given datom in the store.
-   Returns nil if the given datom would not replace any existing ones."
-  [store {:keys [e a]}]
+(defn- previous-retraction
+  "Given an attribute and value, return an operation resulting in the removal
+  of the 'old' value for the operation. If there is nothing to replace, return
+  nil."
+  [store e a]
   (when (card-one? store a)
     (let [v (get-in store [:index e a] ::not-found)]
       (when (not= v ::not-found)
-        (f/->Datom e a v)))))
+        [:db/retract e a v]))))
 
 (defn- index-insertions
   "Update the store's index with the given concrete datoms"
@@ -127,6 +129,12 @@
                  (:index store)
                  datoms)))
 
+(defn- op-identity
+  "If a :db/add operation expresses an identity, return the tuple [[a v] e], otherwise nil"
+  [store [_ e a v]]
+  (when (identity? store a)
+    [[a v] e]))
+
 (defn- datom-identity
   "If a datom expresses an identity, return the tuple [[a v] e], otherwise nil"
   [store {:keys [e a v]}]
@@ -149,12 +157,12 @@
   (defn- new-eid []
     (swap! eid inc)))
 
-
 (defn- collect-tempids
-  "Given a seq of datoms, return a set of all tempids present in the datoms (e
-   or v position)"
-  [store datoms]
-  (reduce (fn [tempids {:keys [e a v]}]
+  "Given a seq of operations, return a set of all tempids present in the operations.
+
+   Tempids are only detected on :db/add operations, in the 'e' and 'v' positions."
+  [store ops]
+  (reduce (fn [tempids [_ e a v]]
             (let [tempids (if-not (pos-int? e)
                             (conj tempids e)
                             tempids)
@@ -163,20 +171,21 @@
                             tempids)]
               tempids))
     #{}
-    datoms))
+    (filter #(= :db/add (first %)) ops)))
 
 (defn- collect-ids
-  "Given a seq of datoms, return a map of {e id} for all datoms which express
-   an identity"
-  [store datoms]
-  (->> datoms
-    (keep #(datom-identity store %))
+  "Given a seq of operations, return a map of {e id} for all :db/add ops with
+   a tempid in entity position which express an identity"
+  [store ops]
+  (->> ops
+    (filter #(= :db/add (first %)))
+    (keep #(op-identity store %))
     (map (fn [[id e]] [e id]))
     (into {})))
 
 (defn resolve-ids
   "Given a seqence of [attr value] ids, return a map of {id eid}, either
-   finding an existing eid in the store or creating a new one."
+   finding an existing eid in the store OR creating a new one."
   [store ids]
   (reduce (fn [id->eid id]
             (if (id->eid id)
@@ -193,56 +202,87 @@
 ;; 4. For each tempid, find (or create) a corresponding concrete eid
 ;; 5. Map the datoms, substituting tempids for real IDs.
 
-
 (defn- resolve-tempids
-  "Given a set of datoms (which may contain temporary IDs), return a tuple of
-   concrete datoms (with tempids swapped for concrete entity IDs)
+  "Given a set of operations (which may contain temporary IDs), return a tuple
+   of concrete operatio (with tempids swapped for concrete EIDs) and the Tempid
+   bindings.
 
-   Returns a tuple of a set of concrete datoms, and the tempid bindings"
-  [store datoms]
-  (let [tids (collect-tempids store datoms)
-        tid->id (collect-ids store datoms)
+   Note: only replaces tempids in :db/add operations."
+  [store ops]
+  (let [tids (collect-tempids store ops)
+        tid->id (collect-ids store ops)
         id->eid (resolve-ids store (vals tid->id))
         bindings (into {} (map (fn [tid]
                                  [tid
                                   (or (-> tid tid->id id->eid) (new-eid))])
                             tids))
-        new-datoms (map (fn [{:keys [e a v]}]
-                          (let [e (if (pos-int? e) e (bindings e))
-                                v (if (and (ref? store a) (not (pos-int? v)))
-                                    (bindings v)
-                                    v)]
-                            (f/->Datom e a v)))
-                     datoms)]
-    [new-datoms bindings]))
+        new-ops (map (fn [op]
+                       (if (not= :db/add (first op))
+                         op
+                         (let [[_ e a v] op
+                               e (if (pos-int? e) e (bindings e))
+                               v (if (and (ref? store a) (not (pos-int? v)))
+                                   (bindings v)
+                                   v)]
+                           [:db/add e a v])))
+                  ops)]
+    [new-ops bindings]))
 
-(defn- op-datoms
-  "Given a single operation, return a tuple of [insert-datoms retract-datoms]"
-  [store [op & args]]
-  (case op
-    :db/add [[(apply f/->Datom args)] nil]
-    :db/retract [nil [(apply f/->Datom args)]]
-    (throw (ex-info (str "Unknown txdata operation " op)
-             {:op op :args args}))))
+(defn- retract-entity-ops
+  "Return :db/remove operations that constitute a :db.fn/retractEntity operation"
+  [store eid]
+  (mapcat (fn [[attr val-or-vals]]
+            (if (coll? val-or-vals)
+              (map (fn [v] [:db/retract eid attr v]) val-or-vals)
+              [[:db/retract eid attr val-or-vals]]))
+    (get-in store [:index eid])))
 
-;; TODO: add :db.fn/retractEntity
+(defn- add-operation
+  "Expand a :db/add operation to include all implied operations. Includes
+   logic for:
 
-(defn- operations-datoms
-  "Given a sequence of operations, return a tuple of [insert-datoms
-   retract-datoms], with all operations expanded to datoms. Does not resolve
-   tempids."
-  [store operations]
-  (let [results (map #(op-datoms store %) operations)]
-    [(mapcat first results)
-     (mapcat second results)]))
+   - retracting previous values of cardinality-one attrs
+   - ensuring no duplicate values"
+  [store [_ e a v :as op]]
+  (if (has? store e a v)
+    nil
+    (if-let [r (previous-retraction store e a)]
+      [r op]
+      [op])))
+
+(defn expand-operation
+  "Expand an operation into basic add/retract operations. Includes logic for
+   replacing/retracting card-one attributes and eliminating duplicate facts.
+
+   Note that tempids should already have been replaced: operations may not
+   expand to operations that contain tempids."
+  [store op]
+  (case (first op)
+    :db/add (add-operation store op)
+    :db/retract [op]
+    :db.fn/retractEntity (retract-entity-ops store (second op))
+    (throw (ex-info (str "Unknown txdata operation " (first op))
+             {:op op}))))
+
+(defn- datom
+  "Convert a :db/add or :db/retract operation to a datom record"
+  [[_ e a v]]
+  (f/->Datom e a v))
 
 (defrecord SimpleStore [schema index identities card-one-attrs identity-attrs ref-attrs]
   Store
-  (resolve [store operations]
-    (let [[insert-datoms retract-datoms] (operations-datoms store operations)
-          [insert-datoms bindings] (resolve-tempids store insert-datoms)
-          insert-datoms (filter #(not (has? store %)) insert-datoms)
-          retract-datoms (concat retract-datoms (keep #(replaces store %) insert-datoms))]
+  (resolve [store txdata]
+    (let [ops (txdata/operations txdata)
+          [concrete-ops bindings] (resolve-tempids store ops)
+          basic-ops (loop [ops (set concrete-ops)]
+                      (let [ops' (set (mapcat #(expand-operation store %) ops))]
+                        (if (= ops ops')
+                          ops
+                          (recur ops'))))
+          {insertions true, retractions false} (group-by #(= :db/add (first %))
+                                                 basic-ops)
+          insert-datoms (map datom insertions)
+          retract-datoms (map datom retractions)]
       [insert-datoms retract-datoms bindings]))
   (update [store insert-datoms retract-datoms]
     (let [store (index-retractions store retract-datoms)
