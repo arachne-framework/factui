@@ -31,9 +31,30 @@
 
 (defn session
   "Given a base session (as defined by `factui.api/rule-base`), add in a
-   schema and return an initalized FactUI session."
-  [base schema-txdata session-id]
-  (session/session base (store/store schema-txdata) session-id))
+   schema and return an initalized FactUI session.
+
+   Optionally takes a session ID, otherwise a random one will be assigned."
+  ([base schema-txdata]
+   (session base schema-txdata (gensym "session")))
+  ([base schema-txdata session-id]
+   (session/session base (store/store schema-txdata) session-id)))
+
+(defn fork
+  "Fork a session by giving it a new session ID.
+
+   Although sessions are immutable data structures, and therefore any update
+   of a session is a logical 'fork', a rule must be registered globally and
+   will fire any time any session changes. To prevent spurious notifications
+   from different sessions, every session has a unique ID that is shared by it
+   and all its successors, so listeners can determine which events they are
+   interested in.
+
+   Use this function to give a session a new ID, so updates to it will not
+   trigger listeners registered to the original session (and vice versa.)"
+  ([session]
+   (fork session (gensym "session")))
+  ([session id]
+   (assoc session :session-id id)))
 
 (defn with-id
   "Assign the session the given ID. Session IDs are used when registering

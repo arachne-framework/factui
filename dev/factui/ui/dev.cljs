@@ -35,7 +35,7 @@
    [?task :task/completed ?completed]])
 
 (rum/defc Task < {:key-fn (fn [_ id] id)}
-                 (fr/query task-q ::session)
+                 (fr/query task-q)
                  rum/static
   [app-state ?task]
   (let [[title completed] *results*]
@@ -56,7 +56,7 @@
    [?t :task/title ?title]])
 
 
-(rum/defc TaskList < (fr/query tasklist-q ::session)
+(rum/defc TaskList < (fr/query tasklist-q)
                      rum/static
   [app-state]
   [:div
@@ -77,7 +77,7 @@
           (Task app-state t))]
    ])
 
-;(f/rulebase rulebase factui.ui.dev)
+(f/rulebase rulebase factui.ui.dev)
 
 (def initial-data
   [{:task/title "Task A"
@@ -89,7 +89,7 @@
 
 (defn ^:export main
   []
-  (let [base (f/session rulebase schema ::session)
+  (let [base (f/session rulebase schema)
         app-state (fr/initialize
                     base
                     TaskList

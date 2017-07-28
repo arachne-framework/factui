@@ -17,17 +17,18 @@
 
 (defn- deregister
   "Deregister a Rum mixin from an active query"
-  [state query session-id]
+  [state query]
   (when (::results-ch state)
     (a/close! (::results-ch state)))
   (dissoc state ::registered-args ::results-ch))
 
 (defn- register
   "Deregister a Rum mixin from an active query"
-  [state query session-id]
+  [state query]
   (let [session (first (:rum/args state))
+        session-id (:session-id @session)
         args (query-args state query)
-        results (atom (apply f/query (:session @session) query args))
+        results (atom (apply f/query @session query args))
         ch (f/register session-id query args)]
     (go-loop []
       (when-let [r (a/<! ch)]
@@ -45,13 +46,12 @@
 
    Takes the FactUI query and the Rum state and returns updated state."
 
-  [state query session-id]
+  [state query]
   (if (= (:rum/args state) (::registered-args state))
     state
     (-> state
-      (deregister query session-id)
-      (register query session-id))))
-
+      (deregister query)
+      (register query))))
 
 (def ^:dynamic *results*)
 
@@ -72,10 +72,10 @@
 
    The component does not additional update semantics, but the FactUI mixin is
    fully composable with rum/static and rum/local."
-  [query session-id]
-  {:will-mount #(on-update % query session-id)
+  [query]
+  {:will-mount #(on-update % query)
 
-   :will-update #(on-update % query session-id)
+   :will-update #(on-update % query)
 
    :wrap-render (fn [render-fn]
                   (fn [state & render-args]
@@ -83,20 +83,23 @@
                       (apply render-fn state render-args))))
 
    :will-unmount (fn [state]
-                   (deregister state query session-id))})
+                   (deregister state query))})
+
+;; Used to convey bindings out of a "transact" swap.
+(def ^:dynamic *bindings*)
 
 (defn transact!
   "Swap a session-atom, updating it with the given txdata.
 
   Returns a map of tempid bindings."
   [app-state tx]
-  (:bindings (swap! app-state
-               (fn [state]
-                 (let [session (:session state)
-                       [new-session bindings] (f/transact session tx)]
-                   (assoc state
-                     :session new-session
-                     :bindings bindings))))))
+  (binding [*bindings* nil]
+    (swap! app-state
+      (fn [session]
+        (let [[new-session bindings] (f/transact session tx)]
+          (set! *bindings* bindings)
+          new-session)))
+    *bindings*))
 
 (defonce ^:private version (atom 0))
 
@@ -104,14 +107,14 @@
 (defn initialize
   "Start application rendering to the given root node, given a base Clara session"
   [base-session root-component root-element]
-  (let [app-state (atom {:session base-session})]
+  (let [app-state (atom base-session)]
 
     (rum/mount (root-component app-state) root-element)
 
     (add-watch version :version-watch
       (fn [_ _ _ version]
 
-        (rum/mount (root-component (atom {:session (:session @app-state)})) root-element)
+        (rum/mount (root-component (atom @app-state)) root-element)
 
         ))
     app-state))
