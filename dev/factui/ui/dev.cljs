@@ -79,7 +79,7 @@
    ])
 
 
-(api/rulebase rulebase factui.ui.dev)
+(f/rulebase rulebase factui.ui.dev)
 
 (def initial-data
   [{:task/title "Task A"
