@@ -12,4 +12,4 @@
   [?d <- Datom [{:keys [a]}] (= a ?a)]
    =>
   (when (factui.impl.store/transient? @factui.impl.session/*store* ?a)
-    (cr/retract! ?d)))
+    (clara.rules/retract! ?d)))

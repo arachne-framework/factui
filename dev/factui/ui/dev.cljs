@@ -1,7 +1,6 @@
 (ns factui.ui.dev
   (:require [factui.api :as f :include-macros true]
             [factui.rum :as fr :refer [*results*]]
-            [clara.rules :as cr :include-macros true]
             [rum.core :as rum :include-macros true]
             [cljs.core.async :as a])
   (:require-macros [clojure.core.async]))
@@ -78,8 +77,7 @@
           (Task app-state t))]
    ])
 
-
-(f/rulebase rulebase factui.ui.dev)
+;(f/rulebase rulebase factui.ui.dev)
 
 (def initial-data
   [{:task/title "Task A"

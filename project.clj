@@ -1,5 +1,6 @@
-(defproject factui "0.1.0-SNAPSHOT"
-  :dependencies [[org.clojure/clojure "1.9.0-alpha17"]
+(defproject org.arachne-framework/factui "0.1.0-SNAPSHOT"
+  :dependencies [[org.clojure/clojure "1.9.0-alpha17" :scope "provided"]
+                 [org.clojure/clojurescript "1.9.671" :scope "provided"]
                  [org.clojure/core.async "0.3.443"]
                  [com.cerner/clara-rules "0.15.1" :exclusions [prismatic/schema]]
                  [prismatic/schema "1.1.6"]
@@ -61,8 +62,7 @@
                               }}
              :dev {:plugins [[lein-figwheel "0.5.10" :exclusions [org.clojure/clojurescript]]]
                    :dependencies [[figwheel-sidecar "0.5.10"]
-                                  [rum "0.10.8"]
-                                  [org.clojure/clojurescript "1.9.671"]]
+                                  [rum "0.10.8"]]
                    :source-paths ["dev" "test"]
                    :resource-paths ["target"]
                    :clean-targets ^{:protect false} ["target" :target-path]
