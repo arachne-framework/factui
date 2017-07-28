@@ -72,27 +72,32 @@
         m))
     m))
 
-(defn- card-one?
+(defn card-one?
   "Efficiently check if a given attr is card-one?"
   [store attr]
   (contains? (:card-one-attrs (:attrs store)) attr))
 
-(defn- identity?
+(defn identity?
   "Efficiently check if a given attr is an identity attr"
   [store attr]
   (contains? (:identity-attrs (:attrs store)) attr))
 
-(defn- ref?
+(defn ref?
   "Efficiently check if a given attr is a ref"
   [store attr]
   (contains? (:ref-attrs (:attrs store)) attr))
 
-(defn- component?
+(defn component?
   "Efficiently check if a given attr is a component"
   [store attr]
-  (contains? (:ref-attrs (:attrs store)) attr))
+  (contains? (:component-attrs (:attrs store)) attr))
 
-(defn- has?
+(defn transient?
+  "Efficiently check if a given attr is transient"
+  [store attr]
+  (contains? (:transient-attrs (:attrs store)) attr))
+
+(defn has?
   "Check if the store contains a datom"
   [store e a v]
   (when-let [val (get-in store [:index e a])]
@@ -113,9 +118,10 @@
   [store datoms]
   (assoc store :index
                (reduce (fn [m {:keys [e a v]}]
-                         (if (card-one? store a)
-                           (assoc-in m [e a] v)
-                           (update-in m [e a] (fnil conj #{}) v)))
+                         (cond
+                           (transient? store a) m
+                           (card-one? store a) (assoc-in m [e a] v)
+                           :else (update-in m [e a] (fnil conj #{}) v)))
                  (:index store)
                  datoms)))
 
@@ -311,7 +317,11 @@
     (filter :db/valueType)
     (map (fn [txmap]
            [(:db/ident txmap)
-            (select-keys txmap [:db/cardinality :db/unique :db/valueType :factui/transient])]))
+            (select-keys txmap [:db/cardinality
+                                :db/unique
+                                :db/valueType
+                                :db/isComponent
+                                :factui/isTransient])]))
     (into {})))
 
 (defn- attrs-with
@@ -332,4 +342,5 @@
       {:card-one-attrs (attrs-with schema :db/cardinality :db.cardinality/one)
        :identity-attrs (attrs-with schema :db/unique :db.unique/identity)
        :ref-attrs (attrs-with schema :db/valueType :db.type/ref)
-       :component-attrs (attrs-with schema :db/isComponent true)})))
+       :component-attrs (attrs-with schema :db/isComponent true)
+       :transient-attrs (attrs-with schema :factui/isTransient true)})))

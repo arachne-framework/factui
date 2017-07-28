@@ -29,7 +29,15 @@
     :db/cardinality :db.cardinality/one}
    {:db/ident :person/friends
     :db/valueType :db.type/ref
-    :db/cardinality :db.cardinality/many}])
+    :db/cardinality :db.cardinality/many}
+   {:db/ident :person/active
+    :db/valueType :db.type/boolean
+    :db/cardinality :db.cardinality/one}
+
+   {:db/ident :entity/clicked
+    :db/valueType :db.type/boolean
+    :db/cardinality :db.cardinality/one
+    :factui/isTransient true}])
 
 (api/defquery person-name
    "Find a person by their name"
@@ -87,6 +95,14 @@
   =>
   (api/transact! [{:db/id ?p
                    :person/likes "Cookies"}]))
+
+(api/defrule clicked-becomes-active
+  "If a person recives a 'click' event, make it an active person"
+  [?p :person/id _]
+  [?p :entity/clicked true]
+  =>
+  (api/transact! [{:db/id ?p
+                   :person/active true}]))
 
 (api/defrule simple-rule-logical
   "A basic, simple rule"
@@ -182,14 +198,16 @@
                      [:person/name "Luke"]}))))
 
 
+(deftest transient-attrs-test
+  (let [s1 (api/transact-all base [{:person/id 42
+                                    :person/name "Luke"}])
+        s2 (api/transact-all s1 [{:person/id 42
+                                  :entity/clicked true}])
 
-
-
-
-
-
-
-
-
-
-
+        result1 (api/query s1 all-attrs 42)
+        result2 (api/query s2 all-attrs 42)]
+    (is (= result1 #{[:person/id 42]
+                     [:person/name "Luke"]}))
+    (is (= result2 #{[:person/id 42]
+                     [:person/name "Luke"]
+                     [:person/active true]}))))

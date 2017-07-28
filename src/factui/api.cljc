@@ -1,6 +1,7 @@
 (ns factui.api
   (:require [factui.impl.session :as session]
             [factui.impl.store :as store]
+            [factui.impl.rules]
    #?(:clj  [factui.impl.compiler :as comp])
    #?(:clj  [clara.rules :as cr]
       :cljs [clara.rules :as cr :include-macros true])
@@ -23,9 +24,10 @@
           This session should be converted to a FactUI session and a schema
           installed before adding any data (see `factui.api/session`)."
           [name & nses]
-          `(cr/defsession ~name ~@(map (fn [n] `(quote ~n)) nses)
-             :fact-type-fn f/fact-type-fn
-             :ancestors-fn f/ancestors-fn)))
+          (let [nses (conj nses 'factui.impl.rules)]
+            `(cr/defsession ~name ~@(map (fn [n] `(quote ~n)) nses)
+               :fact-type-fn f/fact-type-fn
+               :ancestors-fn f/ancestors-fn))))
 
 (defn session
   "Given a base session (as defined by `factui.api/rule-base`), add in a
