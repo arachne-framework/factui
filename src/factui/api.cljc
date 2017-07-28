@@ -13,7 +13,10 @@
             [clojure.string :as str]
    #?(:clj  [clojure.core.async :as a :refer [go go-loop <! >!]]
       :cljs [cljs.core.async :as a :refer [<! >!]])
-            [factui.facts :as f])
+            [factui.facts :as f]
+   #?(:clj [clojure.pprint :as pprint]
+      :cljs     [cljs.pprint :as pprint])
+            )
   #?(:cljs (:require-macros [cljs.core.async.macros :refer [go go-loop]])))
 
 #?(:clj (defmacro rulebase
@@ -34,10 +37,8 @@
    schema and return an initalized FactUI session.
 
    Optionally takes a session ID, otherwise a random one will be assigned."
-  ([base schema-txdata]
-   (session base schema-txdata (gensym "session")))
-  ([base schema-txdata session-id]
-   (session/session base (store/store schema-txdata) session-id)))
+  [base schema-txdata]
+  (session/session base (store/store schema-txdata) (gensym "session")))
 
 (defn fork
   "Fork a session by giving it a new session ID.
@@ -274,7 +275,8 @@
           (cr/defrule ~rule-name
             ~@(s/unform ::cs/lhs (::cs/lhs output))
             ~'=>
-            (trigger ~registry-name ~input-symbols))
+            (when-let [r# (resolve (quote ~registry-name))]
+              (trigger @r# ~input-symbols)))
 
           (cr/defquery ~@(s/unform ::cs/defquery-args output))
 
@@ -285,3 +287,14 @@
              (if (com/compiling-cljs?)
                `(set! ~query-name (merge ~query-name ~factui-data))
                `(alter-var-root (var ~query-name) merge ~factui-data)))))))
+
+(defn rebuild-session
+  "Rebuild a session on a new base ruleset by re-adding all datoms"
+  [base old-session schema]
+  #?(:clj (println "Rebuilding session due to code reload. Logical rule state will be lost. Rebuilding...")
+     :cljs (.log js/console "Rebuilding session due to code reload. Logical rule state will be lost. Rebuilding..."))
+  (let [new-session (session base schema)
+        populated-session (transact-all new-session (store/datoms (:store old-session)))]
+    #?(:clj (println "...rebuild complete.")
+       :cljs (.log js/console "...rebuild complete."))
+    populated-session))

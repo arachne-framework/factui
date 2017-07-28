@@ -344,3 +344,14 @@
        :ref-attrs (attrs-with schema :db/valueType :db.type/ref)
        :component-attrs (attrs-with schema :db/isComponent true)
        :transient-attrs (attrs-with schema :factui/isTransient true)})))
+
+(defn datoms
+  "Given a store, return a lazy seq of all the datoms in it, as :db/add operations"
+  [{index :index}]
+  (mapcat (fn [[e attrs]]
+            (mapcat (fn [[a v-or-vs]]
+                      (if (coll? v-or-vs)
+                        (map (fn [v] [:db/add e a v]) v-or-vs)
+                        [[:db/add e a v-or-vs]]))
+              attrs))
+    index))

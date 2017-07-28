@@ -4,8 +4,20 @@
             [cljs.core.async :as a])
   (:require-macros [cljs.core.async.macros :refer [go-loop]]))
 
-;; TODO: Add pulse predicates, create demo of event handling
-;; TODO: See if it's worth moving rules engine to web worker
+(def ^:private *rebuild-on-refresh* (atom true))
+
+(defn set-rebuild-on-refresh
+  "Sets whether the session be should be entirely rebuilt on a new rulebase,
+   when a refresh manually triggered (such as by a Figwheel recompile).
+   Defaults to true.
+
+   If set to false, changes to rules will not be reflected without a full page
+   refresh.
+
+   However, this operation may be expensive with very large sessions. If
+   refreshing takes too long, you may wish to disable this."
+  [rebuild?]
+  (reset! *rebuild-on-refresh* rebuild?))
 
 (defn- query-args
   "Given a Rum state and a query, return a vectory of FactUI query args, based
@@ -60,7 +72,7 @@
 ; ::results-ch => channel upon which will be placed new results
 ; ::registered-args => args registered to the query
 
-(defn query
+(defn query2
   "Given a FactUI reactive query, construct a Rum mixin which will watch for
    changes to the given query, and re-render whenever the query results change.
 
@@ -103,21 +115,24 @@
 
 (defonce ^:private version (atom 0))
 
-
 (defn initialize
   "Start application rendering to the given root node, given a base Clara session"
-  [base-session root-component root-element]
-  (let [app-state (atom base-session)]
+  [rulebase schema root-component root-element]
+  (let [app-state-holder (atom (atom (f/session @rulebase schema)))
+        render #(rum/mount (root-component @app-state-holder) root-element)]
 
-    (rum/mount (root-component app-state) root-element)
+    (render)
 
     (add-watch version :version-watch
       (fn [_ _ _ version]
+        (let [old-session @@app-state-holder
+              new-session (if @*rebuild-on-refresh*
+                            (f/rebuild-session @rulebase old-session schema)
+                            old-session)]
+          (reset! app-state-holder (atom new-session))
+          (render))))
 
-        (rum/mount (root-component (atom @app-state)) root-element)
-
-        ))
-    app-state))
+    @app-state-holder))
 
 (defn refresh
   "Invoke this function to force all components to re-render, globally.

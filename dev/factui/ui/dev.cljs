@@ -1,9 +1,14 @@
 (ns factui.ui.dev
   (:require [factui.api :as f :include-macros true]
-            [factui.rum :as fr :refer [*results*]]
+            [factui.rum :as fr :refer [*results*] :refer-macros [q]]
             [rum.core :as rum :include-macros true]
+
+            [cljs.pprint :as pprint]
+            [factui.impl.store :as store]
             [cljs.core.async :as a])
   (:require-macros [clojure.core.async]))
+
+(fr/set-rebuild-on-refresh true)
 
 (enable-console-print!)
 
@@ -27,16 +32,14 @@
                   {:task/title (str "Task " (rand-string))
                    :task/completed false})))
 
-(f/defquery task-q
-  [:find [?title ?completed]
-   :in ?task
-   :where
-   [?task :task/title ?title]
-   [?task :task/completed ?completed]])
-
-(rum/defc Task < {:key-fn (fn [_ id] id)}
-                 (fr/query task-q)
+(rum/defc Task < (q [:find [?title ?completed]
+                     :in ?task
+                     :where
+                     [?task :task/title ?title]
+                     [?task :task/completed ?completed]])
+                 {:key-fn (fn [_ id] id)}
                  rum/static
+
   [app-state ?task]
   (let [[title completed] *results*]
     [:li
@@ -50,13 +53,9 @@
      " "
      title]))
 
-(f/defquery tasklist-q
-  [:find ?t ?title
-   :where
-   [?t :task/title ?title]])
-
-
-(rum/defc TaskList < (fr/query tasklist-q)
+(rum/defc TaskList < (q [:find ?t ?title
+                         :where
+                         [?t :task/title ?title]])
                      rum/static
   [app-state]
   [:div
@@ -70,6 +69,9 @@
    [:button {:on-click (fn []
                          (fr/transact! app-state (new-tasks 500)))}
     "Add 500 Tasks"]
+   [:button {:on-click (fn []
+                         (pprint/pprint (store/datoms (:store @app-state))))}
+    "Dump Datoms"]
    [:br]
    [:br]
    [:div "Results:" (count *results*)]
@@ -89,9 +91,9 @@
 
 (defn ^:export main
   []
-  (let [base (f/session rulebase schema)
-        app-state (fr/initialize
-                    base
+  (let [app-state (fr/initialize
+                    #'rulebase
+                    schema
                     TaskList
                     (.getElementById js/document "root"))]
     (fr/transact! app-state initial-data)))
