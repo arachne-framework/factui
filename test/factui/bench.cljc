@@ -100,7 +100,7 @@
    :book/topic (repeatedly (inc (rand-int 5)) rand-string)})
 
 (api/rulebase rulebase factui.bench.basic-rules)
-(def base (api/session rulebase schema ::session))
+(def base (api/session rulebase schema))
 
 (def num-people 1000)
 (def num-books 100)

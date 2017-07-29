@@ -35,8 +35,16 @@
     :db/valueType :db.type/ref
     :db/cardinality :db.cardinality/many}])
 
+(api/defquery person-age
+  "Find a person and return their age."
+  [:find ?age
+   :in ?pid
+   :where
+   [?p :person/age ?age]
+   [?p :person/id ?pid]])
+
 (api/defquery person-name
-  "Find a person by their name"
+  "Find a person and return their name"
   [:find ?name
    :in ?pid
    :where
@@ -44,41 +52,49 @@
    [?p :person/id ?pid]])
 
 (api/rulebase rulebase factui.api-reactive-test)
-(def base (api/session rulebase test-schema ::session))
+(def base (api/session rulebase test-schema))
 
 #?(:clj
    (deftest simple-query
 
-     (let [results (api/register ::session person-name [42])
-           results2 (api/register ::no-such-session person-name [42])]
+     (let [name-results (api/register (:session-id base) person-name [42])
+           age-results (api/register (:session-id base) person-age [42])
+           never-results (api/register "no-such-session" person-name [42])]
 
        (api/transact-all base [{:person/id 42
+                                :person/age 32
                                 :person/name "Luke"}])
 
-       (is (= #{["Luke"]} (a/<!! results)))
+       (is (= #{["Luke"]} (first (a/alts!! [name-results (a/timeout 500)]))))
+       (is (= #{[32]} (first (a/alts!! [age-results (a/timeout 500)]))))
 
        (api/transact-all base [{:person/id 42
+                                :person/age 18
                                 :person/name "John"}])
 
-       (is (= nil (first (a/alts!! [(a/timeout 500) results2])))))
+       (is (= nil (first (a/alts!! [(a/timeout 500) never-results])))))
 
        ))
 
 #?(:cljs
    (deftest simple-query
-     (let [results (api/register ::session person-name [42])
-           results2 (api/register ::no-such-session person-name [42])]
+     (let [name-results (api/register (:session-id base) person-name [42])
+           age-results (api/register (:session-id base) person-age [42])
+           never-results (api/register "no-such-session" person-name [42])]
 
        (api/transact-all base [{:person/id 42
+                                :person/age 32
                                 :person/name "Luke"}])
 
        (async done
          (go
-           (is (= #{["Luke"]} (a/<! results)))
+           (is (= #{["Luke"]} (first (a/alts! [(a/timeout 500) name-results]))))
+           (is (= #{[32]} (first (a/alts! [(a/timeout 500) age-results]))))
 
            (api/transact-all base [{:person/id 42
+                                    :person/age 18
                                     :person/name "John"}])
 
-           (is (= nil (first (a/alts! [(a/timeout 500) results2]))))
+           (is (= nil (first (a/alts! [(a/timeout 500) never-results]))))
 
            (done))))))

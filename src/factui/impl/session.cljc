@@ -17,9 +17,9 @@ engine internals. Depends on the engine internals running in the same thread as
 the top-level API (true for the default implementation.)"} *store*)
 
 (def ^{:dynamic true
-       :doc "Dynamic var used to supply a channel to the RHS of rules. A
-DatomSession instance will be placed upon the channel whenever a transaction is
-complete (that is, after rules have finished firing.)"} *tx-complete*)
+       :doc "Dynamic var used to supply a core.async promise channel to the
+RHS of rules. A DatomSession instance will satisfy the promise whenever a
+transaction is complete (that is, after rules have finished firing.)"} *tx-complete*)
 
 (def ^{:dynamic true
        :doc "Dynamic var used to pass the RHS of a rule with the curren
@@ -68,6 +68,7 @@ session's ID"} *session-id*)
   (to-persistent! [listener]
     listener))
 
+(declare fire-rules*)
 (defrecord DatomSession [delegate store session-id]
   eng/ISession
   (insert [session facts]
@@ -79,28 +80,25 @@ session's ID"} *session-id*)
       (DatomSession. (eng/retract delegate facts) @*store* session-id)))
 
   (fire-rules [session]
-    (binding [*store* (atom store)
-              *tx-complete* (a/chan)
-              *session-id* session-id]
-      (let [sess (DatomSession. (eng/fire-rules delegate) @*store* session-id)]
-        (a/put! *tx-complete* sess)
-        (a/close! *tx-complete*)
-        sess)))
+    (fire-rules* store session-id #(eng/fire-rules delegate)))
 
   (fire-rules [session opts]
-    (binding [*store* (atom store)
-              *tx-complete* (a/chan)
-              *session-id* session-id]
-      (let [sess (DatomSession. (eng/fire-rules delegate opts) @*store* session-id)]
-        (a/put! *tx-complete* sess)
-        (a/close! *tx-complete*)
-        sess)))
+    (fire-rules* store session-id #(eng/fire-rules delegate opts)))
 
   (query [session query params]
     (eng/query delegate query params))
 
   (components [session]
     (eng/components delegate)))
+
+(defn- fire-rules*
+  [store session-id delegate-fire-rules]
+  (binding [*store* (atom store)
+            *tx-complete* (a/promise-chan)
+            *session-id* session-id]
+    (let [sess (DatomSession. (delegate-fire-rules) @*store* session-id)]
+      (a/put! *tx-complete* sess)
+      sess)))
 
 (defn session
   "Create a new Datom Session from the given underlying session and store,

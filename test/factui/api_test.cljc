@@ -115,7 +115,7 @@
 
 
 (api/rulebase rulebase factui.api-test)
-(def base (api/session rulebase test-schema ::session))
+(def base (api/session rulebase test-schema))
 
 (deftest simple-query
   (let [[s bindings] (api/transact base [{:db/id -99
