@@ -94,6 +94,6 @@
   (let [app-state (fr/initialize
                     #'rulebase
                     schema
-                    TaskList
+                    #'TaskList
                     (.getElementById js/document "root"))]
     (fr/transact! app-state initial-data)))

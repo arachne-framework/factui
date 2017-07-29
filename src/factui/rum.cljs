@@ -119,7 +119,7 @@
   "Start application rendering to the given root node, given a base Clara session"
   [rulebase schema root-component root-element]
   (let [app-state-holder (atom (atom (f/session @rulebase schema)))
-        render #(rum/mount (root-component @app-state-holder) root-element)]
+        render #(rum/mount (@root-component @app-state-holder) root-element)]
 
     (render)
 
