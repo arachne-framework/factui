@@ -51,6 +51,13 @@
    [?p :person/name ?name]
    [?p :person/id ?pid]])
 
+
+(api/defquery all-names
+  "Find all people and names"
+  [:find ?p ?name
+   :where
+   [?p :person/name ?name]])
+
 (api/rulebase rulebase factui.api-reactive-test)
 (def base (api/session rulebase test-schema))
 
@@ -98,3 +105,28 @@
            (is (= nil (first (a/alts! [(a/timeout 500) never-results]))))
 
            (done))))))
+
+#?(:clj
+   (deftest retractions-are-reactive
+
+     (let [results (api/register (:session-id base) all-names [])
+           [s1 bindings] (api/transact base [{:db/id -42
+                                              :person/id 42
+                                              :person/name "Luke"}])
+           eid (bindings -42)]
+
+       (is (= (api/query s1 all-names)
+              (first (a/alts!! [results (a/timeout 500)]))))
+
+       (let [[s2 _] (api/transact s1 [{:person/id 42
+                                       :person/name "Luke V."}
+                                      {:person/id 99
+                                       :person/name "Joe"}])]
+
+         (is (= (api/query s2 all-names)
+                (first (a/alts!! [results (a/timeout 500)]))))
+
+         (let [[s3 _] (api/transact s2 [[:db/retract eid :person/name "Luke V."]])]
+
+           (is (= (api/query s3 all-names)
+                  (first (a/alts!! [results (a/timeout 2000)])))))))))
