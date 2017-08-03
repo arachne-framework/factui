@@ -30,24 +30,31 @@
 (defn- deregister
   "Deregister a Rum mixin from an active query"
   [state query]
-  (when (::results-ch state)
-    (a/close! (::results-ch state)))
+  (when-let [ch (::results-ch state)]
+    (let [session (first (:rum/args state))
+          args (query-args state query)]
+      (swap! session f/deregister query args ch))
+    (a/close! ch))
   (dissoc state ::registered-args ::results-ch))
 
+;; Defines the following keys in the Rum state:
+; ::results => atom containing latest query results (if any)
+; ::results-ch => channel upon which will be placed new results
+; ::registered-args => args registered to the query
+
 (defn- register
-  "Deregister a Rum mixin from an active query"
+  "Register a Rum component"
   [state query]
   (let [session (first (:rum/args state))
-        session-id (:session-id @session)
         args (query-args state query)
         results (atom (apply f/query @session query args))
-        ch (f/register session-id query args)]
+        ch (a/chan)]
+    (swap! session f/register query args ch)
     (go-loop []
       (when-let [r (a/<! ch)]
         (reset! results r)
         (rum/request-render (:rum/react-component state))
         (recur)))
-
     (assoc state ::registered-args (:rum/args state)
                  ::results results
                  ::results-ch ch)))
@@ -66,36 +73,6 @@
       (register query))))
 
 (def ^:dynamic *results*)
-
-;; Defines the following keys in the Rum state:
-; ::results => atom containing latest query results (if any)
-; ::results-ch => channel upon which will be placed new results
-; ::registered-args => args registered to the query
-
-(defn query2
-  "Given a FactUI reactive query, construct a Rum mixin which will watch for
-   changes to the given query, and re-render whenever the query results change.
-
-   The following assumptions must hold, regarding the component:
-
-   - The first argument to the component is an application state atom
-   - The next N arguments are query inputs, where N is the number of inputs
-   defined by the specified query.
-
-   The component does not additional update semantics, but the FactUI mixin is
-   fully composable with rum/static and rum/local."
-  [query]
-  {:will-mount #(on-update % query)
-
-   :will-update #(on-update % query)
-
-   :wrap-render (fn [render-fn]
-                  (fn [state & render-args]
-                    (binding [*results* @(::results state)]
-                      (apply render-fn state render-args))))
-
-   :will-unmount (fn [state]
-                   (deregister state query))})
 
 ;; Used to convey bindings out of a "transact" swap.
 (def ^:dynamic *bindings*)
