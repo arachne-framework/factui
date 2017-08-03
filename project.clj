@@ -52,8 +52,8 @@
                                                      :cache-analysis false}}]}
                     :aliases {"test-clj" ["run" "-m" "factui.test-runner"]
                               "test-cljs" ["do" ["clean"]
-                                           ["cljsbuild" "once" "test-whitespace"]
-                                           ["shell" "phantomjs" "target/test-ws.js"]]
+                                           ["cljsbuild" "once" "test-advanced"]
+                                           ["shell" "phantomjs" "target/test-adv.js"]]
                               "test-all" ["do" ["test-clj"]
                                           ["test-cljs"]]
                               "bench" ["do" ["clean"]

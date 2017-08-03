@@ -248,6 +248,17 @@
               [[:db/retract eid attr val-or-vals]]))
     (get-in store [:index eid])))
 
+(defn- retract-attr-ops
+  "Expand a :db.fn/retractAttr operation to its individual constituent retractions"
+  [store [_ e a]]
+  (mapcat (fn [val-or-vals]
+            (if (coll? val-or-vals)
+              (map (fn [v]
+                     [:db/retract e a v])
+                val-or-vals)
+              [[:db/retract e a val-or-vals]]))
+    (get-in store [:index e a])))
+
 (defn- add-operation
   "Expand a :db/add operation to include all implied operations. Includes
    logic for:
@@ -280,6 +291,7 @@
     :db/add (add-operation store op)
     :db/retract (retract-operation store op)
     :db.fn/retractEntity (retract-entity-ops store (second op))
+    :db.fn/retractAttr (retract-attr-ops store op)
     (throw (ex-info (str "Unknown txdata operation " (first op))
              {:op op}))))
 

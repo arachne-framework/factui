@@ -308,6 +308,22 @@
           r2 (api/query s2 all-attrs eid)]
       (is (empty? r2)))))
 
+(deftest retract-attrs
+  (let [[s1 bindings] (api/transact base [{:db/id -42
+                                           :person/id 42
+                                           :person/name "Luke"
+                                           :person/likes ["Cheese" "Beer"]}])
+        eid (bindings -42)
+        r1 (api/query s1 all-attrs eid)]
+    (is (= r1 #{[eid :person/id 42]
+                [eid :person/name "Luke"]
+                [eid :person/likes "Cheese"]
+                [eid :person/likes "Beer"]}))
+    (let [s2 (api/transact-all s1 [[:db.fn/retractAttr eid :person/likes]])
+          r2 (api/query s2 all-attrs eid)]
+      (is (= r2 #{[eid :person/id 42]
+                  [eid :person/name "Luke"]})))))
+
 (deftest retract-component
   (let [[s1 bindings] (api/transact base
                         [{:db/id -1
