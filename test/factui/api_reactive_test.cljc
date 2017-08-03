@@ -3,6 +3,7 @@
 
    #?(:cljs [factui.api :as api :include-macros true]
       :clj [factui.api :as api])
+   #?(:clj [clara.rules.compiler :as com])
    #?(:clj
       [clara.rules :as cr]
       :cljs [clara.rules :as cr :include-macros true])
@@ -12,9 +13,10 @@
 
    #?(:cljs [factui.facts :as f :refer [Datom]] :clj [factui.facts :as f])
 
-   #?(:clj [clojure.core.async :as a]
+   #?(:clj [clojure.core.async :as a :refer [go go-loop]]
       :cljs [cljs.core.async :as a]))
-  #?(:cljs (:require-macros [cljs.core.async.macros :refer [go]]))
+  #?(:cljs (:require-macros [cljs.core.async.macros :refer [go go-loop]]
+                            [factui.api-reactive-test :refer [async-body]]))
    #?(:clj (:import [factui.facts Datom])))
 
 (def test-schema
@@ -33,7 +35,11 @@
     :db/cardinality :db.cardinality/one}
    {:db/ident :person/friends
     :db/valueType :db.type/ref
-    :db/cardinality :db.cardinality/many}])
+    :db/cardinality :db.cardinality/many}
+   {:db/ident :person/nicknames
+    :db/valueType :db.type/string
+    :db/cardinality :db.cardinality/many}
+   ])
 
 (api/defquery person-age
   "Find a person and return their age."
@@ -58,75 +64,55 @@
    :where
    [?p :person/name ?name]])
 
+(api/defquery all-ages
+  "Find all people w ages"
+  [:find ?p ?age
+   :where
+   [?p :person/age ?age]])
+
 (api/rulebase rulebase factui.api-reactive-test)
 (def base (api/session rulebase test-schema))
 
-#?(:clj
-   (deftest simple-query
+(defn- wait-for
+  [ch]
+  (go (first (a/alts! [(a/timeout 500) ch]))))
 
-     (let [name-results (api/register (:session-id base) person-name [42])
-           age-results (api/register (:session-id base) person-age [42])
-           never-results (api/register "no-such-session" person-name [42])]
+#?(:clj (defmacro async-body [& body]
+          (if (com/compiling-cljs?)
+            `(cljs.test/async done#
+               (cljs.core.async.macros/go
+                 ~@body
+                 (done#)))
+            `(clojure.core.async/<!!
+               (clojure.core.async/go
+                 ~@body)))))
 
-       (api/transact-all base [{:person/id 42
-                                :person/age 32
-                                :person/name "Luke"}])
+(deftest simple-query
 
-       (is (= #{["Luke"]} (first (a/alts!! [name-results (a/timeout 500)]))))
-       (is (= #{[32]} (first (a/alts!! [age-results (a/timeout 500)]))))
+   (let [name-ch (a/chan)
+         age-ch (a/chan)
+         never-ch (a/chan)
+         s (atom base)]
 
-       (api/transact-all base [{:person/id 42
-                                :person/age 18
-                                :person/name "John"}])
+     (swap! s api/register person-name [42] name-ch)
+     (swap! s api/register person-age [42] age-ch)
+     (swap! s api/register person-name [666] never-ch)
 
-       (is (= nil (first (a/alts!! [(a/timeout 500) never-results])))))
+     (swap! s api/transact-all [{:db/id 1042
+                                 :person/id 42
+                                 :person/age 32
+                                 :person/name "Luke"}])
 
-       ))
+     (async-body
 
-#?(:cljs
-   (deftest simple-query
-     (let [name-results (api/register (:session-id base) person-name [42])
-           age-results (api/register (:session-id base) person-age [42])
-           never-results (api/register "no-such-session" person-name [42])]
+       (is (= #{["Luke"]} (a/<! (wait-for name-ch))))
+       (is (= #{[32]} (a/<! (wait-for age-ch))))
+       (is (nil? (a/<! (wait-for never-ch))))
 
-       (api/transact-all base [{:person/id 42
-                                :person/age 32
-                                :person/name "Luke"}])
+       (testing "updates re-trigger the query"
+         (swap! s api/transact-all [{:db/id 1042 :person/age 33}])
+         (is (= #{[33]} (a/<! (wait-for age-ch)))))
 
-       (async done
-         (go
-           (is (= #{["Luke"]} (first (a/alts! [(a/timeout 500) name-results]))))
-           (is (= #{[32]} (first (a/alts! [(a/timeout 500) age-results]))))
-
-           (api/transact-all base [{:person/id 42
-                                    :person/age 18
-                                    :person/name "John"}])
-
-           (is (= nil (first (a/alts! [(a/timeout 500) never-results]))))
-
-           (done))))))
-
-#?(:clj
-   (deftest retractions-are-reactive
-
-     (let [results (api/register (:session-id base) all-names [])
-           [s1 bindings] (api/transact base [{:db/id -42
-                                              :person/id 42
-                                              :person/name "Luke"}])
-           eid (bindings -42)]
-
-       (is (= (api/query s1 all-names)
-              (first (a/alts!! [results (a/timeout 500)]))))
-
-       (let [[s2 _] (api/transact s1 [{:person/id 42
-                                       :person/name "Luke V."}
-                                      {:person/id 99
-                                       :person/name "Joe"}])]
-
-         (is (= (api/query s2 all-names)
-                (first (a/alts!! [results (a/timeout 500)]))))
-
-         (let [[s3 _] (api/transact s2 [[:db/retract eid :person/name "Luke V."]])]
-
-           (is (= (api/query s3 all-names)
-                  (first (a/alts!! [results (a/timeout 2000)])))))))))
+       (testing "retractions trigger an update"
+         (swap! s api/transact-all [[:db/retract 1042 :person/name "Luke"]])
+         (is (= #{} (a/<! (wait-for name-ch))))))))

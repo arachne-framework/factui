@@ -34,35 +34,9 @@
 
 (defn session
   "Given a base session (as defined by `factui.api/rule-base`), add in a
-   schema and return an initalized FactUI session.
-
-   Optionally takes a session ID, otherwise a random one will be assigned."
+   schema and return an initalized FactUI session."
   [base schema-txdata]
-  (session/session base (store/store schema-txdata) (gensym "session")))
-
-(defn fork
-  "Fork a session by giving it a new session ID.
-
-   Although sessions are immutable data structures, and therefore any update
-   of a session is a logical 'fork', a rule must be registered globally and
-   will fire any time any session changes. To prevent spurious notifications
-   from different sessions, every session has a unique ID that is shared by it
-   and all its successors, so listeners can determine which events they are
-   interested in.
-
-   Use this function to give a session a new ID, so updates to it will not
-   trigger listeners registered to the original session (and vice versa.)"
-  ([session]
-   (fork session (gensym "session")))
-  ([session id]
-   (assoc session :session-id id)))
-
-(defn with-id
-  "Assign the session the given ID. Session IDs are used when registering
-   reactive queries; the reaction will only trigger for sessions with the
-   registered ID."
-  [session id]
-  (session/with-id session id))
+  (session/session base (store/store schema-txdata)))
 
 (defn now []
   #?(:cljs (.getTime (js/Date.))
@@ -150,10 +124,9 @@
 
 
 (s/fdef defquery :args ::fs/defquery-args)
-(s/fdef defquery-static :args ::fs/defquery-args)
 
 #?(:clj
-   (defmacro defquery-static
+   (defmacro defquery
      "Define a basic Clara query using Datomic-style Datalog syntax.
 
      The resulting query will have the following additional keys defined:
@@ -204,7 +177,6 @@
 
 (s/fdef defrule :args ::fs/defrule-args)
 
-
 #?(:clj
    (defmacro defrule
      "Define a Clara rule. The left hand side may contain both Clara-style and
@@ -214,79 +186,6 @@
            output (comp/compile input comp/compile-defrule)
            clara (s/unform ::cs/defrule-args output)]
        `(cr/defrule ~@clara))))
-
-(defn register
-  "Register a listener on a reactive query, for specific query inputs.
-   Whenever the query triggers, with matching values, the results will be placed
-   upon the returned results channel.
-
-   The listener will be de-registered when the results channel is closed."
-  [session-id q inputs]
-  (let [registry (:factui/registry q)
-        notify-ch (a/chan (a/sliding-buffer 1))
-        results-ch (a/chan (a/sliding-buffer 1))
-        registry-key [session-id (vec inputs)]]
-    (swap! registry assoc registry-key notify-ch)
-    (go-loop []
-      (if-let [session (<! (<! notify-ch))]
-        (let [results (apply query session q inputs)]
-          (if (>! results-ch results)
-            (recur)
-            (swap! registry dissoc registry-key)))
-        (recur)))
-    results-ch))
-
-(defn trigger
-  "Function called as the right hand site of a reactive query."
-  [registry input]
-  (let [tx-complete-ch session/*tx-complete*
-        session-id session/*session-id*]
-    (when-let [notify-ch (get @registry [session-id input])]
-      (a/put! notify-ch tx-complete-ch))))
-
-#?(:clj
-   (defmacro defquery
-     "Define a reactive query. Arguments are the same as to `defquery`.
-
-     The resulting query will have the following keys, in addition to those
-     defined by `defquery`:
-
-     :factui/registry - An atom containing a map of input vectors to
-                        notification channels.
-     :factui/rule - A Clara rule with the same conditions as the underlying
-                    query query, which fires off a notification to
-                    corresponding notifcation channels every time the query
-                    changes."
-     [& args]
-     (let [input (s/conform ::fs/defquery-args args)
-           output (comp/compile input comp/compile-defquery)
-           inputs (vec (::cs/query-params output))
-           input-symbols (mapv (comp symbol name) inputs)
-           query-name (symbol (name (::cs/name output)))
-           results-fn (gensym)
-           registry-name (symbol (str *ns*)
-                           (str (name (::cs/name output)) "__registry"))
-           rule-name (symbol (str *ns*)
-                       (str (name (::cs/name output)) "__rule"))]
-       `(let [~results-fn ~(datalog-results input)]
-
-          (defonce ~registry-name (atom {}))
-
-          (cr/defrule ~rule-name
-            ~@(s/unform ::cs/lhs (::cs/lhs output))
-            ~'=>
-            (when-let [r# (resolve (quote ~registry-name))]
-              (trigger @r# ~input-symbols)))
-
-          (cr/defquery ~@(s/unform ::cs/defquery-args output))
-
-          ~(let [factui-data `{:factui/inputs ~inputs
-                               :factui/result-fn ~results-fn
-                               :factui/rule ~rule-name
-                               :factui/registry ~registry-name}]
-             (if (com/compiling-cljs?)
-               `(set! ~query-name (merge ~query-name ~factui-data))
-               `(alter-var-root (var ~query-name) merge ~factui-data)))))))
 
 (defn rebuild-session
   "Rebuild a session on a new base ruleset by re-adding all datoms"
@@ -298,3 +197,28 @@
     #?(:clj (println "...rebuild complete.")
        :cljs (.log js/console "...rebuild complete."))
     populated-session))
+
+(defn register
+  "Register a channel which will recieve notification when a query's results change."
+  [session query args ch]
+  (let [results-ch (a/chan (a/sliding-buffer 1))]
+    (go
+      (loop []
+        (let [raw-results (a/<! results-ch)]
+          (when raw-results
+            (a/>! ch ((:factui/result-fn query) raw-results))
+            (recur)))))
+    (let [params (zipmap (:factui/inputs query) args)]
+      (session/register session
+        (:name query)
+        params
+        results-ch))))
+
+(defn deregister
+  "Remove the registration of a channel to recieve notification when a query's results change."
+  [session query args ch]
+  (let [params (zipmap (:factui/inputs query) args)]
+    (session/deregister session
+      (:name query)
+      params
+      ch)))

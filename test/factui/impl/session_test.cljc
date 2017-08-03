@@ -48,7 +48,7 @@
 
    ])
 
-(api/defquery-static person-by-pid
+(api/defquery person-by-pid
   [:find ?a ?v
    :in ?pid
    :where
@@ -75,7 +75,7 @@
   (api/transact-logical! [{:db/id ?e
                            :person/likes "tea"}]))
 
-(api/defquery-static all-attrs
+(api/defquery all-attrs
   [:find ?e ?a ?v
     :in ?e
     :where
@@ -378,11 +378,3 @@
 
   ; The rule of thumb is pretty simple: never explicitly assert a fact
   ; that can also be logically asserted.
-
-
-;;; TODO: Make sure that a rule that overwrites the result of another rule in the same session applies in the proper order.
-
-
-
-
-

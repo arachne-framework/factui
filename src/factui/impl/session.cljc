@@ -8,7 +8,8 @@
                :cljs [factui.facts :as f :refer [Datom]])
             #?(:clj [clojure.core.async :as a]
                :cljs [cljs.core.async :as a])
-            [factui.impl.store :as store])
+            [factui.impl.store :as store]
+            #?(:clj [clojure.pprint :as pprint :refer [pprint]]))
   #?(:clj (:import [factui.facts Datom])))
 
 (def ^{:dynamic true
@@ -16,24 +17,35 @@
 engine internals. Depends on the engine internals running in the same thread as
 the top-level API (true for the default implementation.)"} *store*)
 
-(def ^{:dynamic true
-       :doc "Dynamic var used to supply a core.async promise channel to the
-RHS of rules. A DatomSession instance will satisfy the promise whenever a
-transaction is complete (that is, after rules have finished firing.)"} *tx-complete*)
-
-(def ^{:dynamic true
-       :doc "Dynamic var used to pass the RHS of a rule with the curren
-session's ID"} *session-id*)
-
 (defn datom? [fact] (instance? Datom fact))
+
+(def ^:dynamic *registry*)
+(def ^:dynamic *triggers*)
+
+(defn- trigger
+  "Trigger registered queries which match the given activation."
+  [node tokens]
+  (when-let [query-name (get-in node [:query :name])]
+    (when-let [registered-params (get *registry* query-name)]
+      (let [params (get-in node [:query :params])
+            param-bindings (keep (fn [binding]
+                                   (let [param-binding (select-keys binding params)]
+                                     (when (contains? registered-params param-binding)
+                                       param-binding)))
+                             (map :bindings tokens))]
+        (when-not (empty? param-bindings)
+          (swap! *triggers* into (map #(vector query-name %)
+                                   param-bindings)))))))
 
 (deftype DatomListener []
   l/IPersistentEventListener
   (to-transient [listener] listener)
   l/ITransientEventListener
   (left-activate! [listener node tokens]
+    (trigger node tokens)
     listener)
   (left-retract! [listener node tokens]
+    (trigger node tokens)
     listener)
   (right-activate! [listener node elements]
     listener)
@@ -44,13 +56,13 @@ session's ID"} *session-id*)
     listener)
   (alpha-activate! [listener node facts]
     listener)
+  (alpha-retract! [listener node facts]
+    listener)
   (insert-facts-logical! [listener node token facts]
     (swap! *store* store/update (filter datom? facts) [])
     listener)
   (retract-facts! [listener facts]
     (swap! *store* store/update [] (filter datom? facts))
-    listener)
-  (alpha-retract! [listener node facts]
     listener)
   (retract-facts-logical! [listener node token facts]
     (swap! *store* store/update [] (filter datom? facts))
@@ -69,21 +81,21 @@ session's ID"} *session-id*)
     listener))
 
 (declare fire-rules*)
-(defrecord DatomSession [delegate store session-id]
+(defrecord DatomSession [delegate store registry]
   eng/ISession
   (insert [session facts]
     (binding [*store* (atom store)]
-      (DatomSession. (eng/insert delegate facts) @*store* session-id)))
+      (DatomSession. (eng/insert delegate facts) @*store* registry)))
 
   (retract [session facts]
     (binding [*store* (atom store)]
-      (DatomSession. (eng/retract delegate facts) @*store* session-id)))
+      (DatomSession. (eng/retract delegate facts) @*store* registry)))
 
   (fire-rules [session]
-    (fire-rules* store session-id #(eng/fire-rules delegate)))
+    (fire-rules* store registry #(eng/fire-rules delegate)))
 
   (fire-rules [session opts]
-    (fire-rules* store session-id #(eng/fire-rules delegate opts)))
+    (fire-rules* store registry #(eng/fire-rules delegate opts)))
 
   (query [session query params]
     (eng/query delegate query params))
@@ -92,20 +104,23 @@ session's ID"} *session-id*)
     (eng/components delegate)))
 
 (defn- fire-rules*
-  [store session-id delegate-fire-rules]
+  [store registry delegate-fire-rules]
   (binding [*store* (atom store)
-            *tx-complete* (a/promise-chan)
-            *session-id* session-id]
-    (let [sess (DatomSession. (delegate-fire-rules) @*store* session-id)]
-      (a/put! *tx-complete* sess)
+            *registry* registry
+            *triggers* (atom #{})]
+    (let [sess (DatomSession. (delegate-fire-rules) @*store* registry)]
+      (doseq [[query params :as t] @*triggers*]
+        (let [results (eng/query sess query params)]
+          (doseq [ch (get-in registry t)]
+            (a/put! ch results))))
       sess)))
 
 (defn session
   "Create a new Datom Session from the given underlying session and store,
    with the specified Session ID."
-  [base store id]
+  [base store]
   (let [components (update (eng/components base) :listeners conj (DatomListener.))]
-    (DatomSession. (eng/assemble components) store id)))
+    (DatomSession. (eng/assemble components) store {})))
 
 (defn transact
   "Given Datomic-style txdata, transact it to the session.
@@ -128,7 +143,19 @@ session's ID"} *session-id*)
     (eng/retract-facts! retract-datoms)
     (eng/insert-facts! insert-datoms (not logical?))))
 
-(defn with-id
-  "Return a session based on the given session with the specified session ID"
-  [session id]
-  (assoc session :session-id id))
+(defn register
+  "Register channel to recieve notification when the results of the specified query+params changes"
+  [session query-name params ch]
+  (update-in session [:registry query-name params] (fnil conj #{}) ch))
+
+(defn deregister
+  "Remove the registration of a channel to recieve notification when the results of the specified query+params changes"
+  [session query-name params ch]
+  (-> session
+    (update-in [:registry query-name params] disj ch)
+    (update-in [:registry query-name] #(if (empty? (get % params))
+                                         (dissoc params)
+                                         %))
+    (update-in [:registry] #(if (empty? (get % query-name))
+                              (dissoc query-name)
+                              %))))
