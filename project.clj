@@ -60,8 +60,8 @@
                                        ["cljsbuild" "once" "test-bench"]
                                        ["shell" "phantomjs" "target/test-bench.js"]]
                               }}
-             :dev {:plugins [[lein-figwheel "0.5.10" :exclusions [org.clojure/clojurescript]]]
-                   :dependencies [[figwheel-sidecar "0.5.10"]
+             :dev {:plugins [[lein-figwheel "0.5.12" :exclusions [org.clojure/clojurescript]]]
+                   :dependencies [[figwheel-sidecar "0.5.12"]
                                   [rum "0.10.8"]]
                    :source-paths ["dev" "test"]
                    :resource-paths ["target"]
