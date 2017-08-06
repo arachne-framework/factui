@@ -108,7 +108,7 @@ There are several elements here to unpack.
     - Any additional arguments after the N query inputs are passed on the Rum component as usual and are not processed by the FactUI mixin.
     - By convention, arguments that map to query inputs use a symbol with a leading `?` to visually disambiguate them. This is not required.
 - The `factui.rum/*results*` dynamic variable is bound within a component's body. It contains Datomic-style query results, in this case a set of `[list-title task-title]` tuples.
-- The remainder of the body is used as the implementation for the Raact component's `render` lifecycle method and should return a single component or Virtual DOM node, as usual (or a Hiccup data structure representing a DOM node, as per Rum.)
+- The remainder of the body is used as the implementation for the React component's `render` lifecycle method and should return a single component or Virtual DOM node, as usual (or a Hiccup data structure representing a DOM node, as per Rum.)
 
 #### Step 3: initialize rendering
 
