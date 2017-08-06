@@ -1,4 +1,4 @@
-(defproject org.arachne-framework/factui "1.0.0-beta1"
+(defproject org.arachne-framework/factui "1.0.1-SNAPSHOT"
   :dependencies [[org.clojure/clojure "1.9.0-alpha17" :scope "provided"]
                  [org.clojure/clojurescript "1.9.671" :scope "provided"]
                  [org.clojure/core.async "0.3.443"]
@@ -60,11 +60,31 @@
                                        ["cljsbuild" "once" "test-bench"]
                                        ["shell" "phantomjs" "target/test-bench.js"]]
                               }}
-             :dev {:plugins [[lein-figwheel "0.5.12" :exclusions [org.clojure/clojurescript]]]
+             :dev {:plugins [[lein-figwheel "0.5.12" :exclusions [org.clojure/clojurescript]]
+                             [lein-cljsbuild "1.1.6" :exclusions [org.clojure/clojure]]]
                    :dependencies [[figwheel-sidecar "0.5.12"]
-                                  [rum "0.10.8"]]
+                                  [rum "0.10.8"
+                                   :exclusions [cljsjs/react cljsjs/react-dom]]
+                                  [cljsjs/react-dom "15.6.1-0" :exclusions [cljsjs/react]]
+                                  [cljsjs/react-with-addons "15.6.1-0"]]
                    :source-paths ["dev" "test"]
                    :resource-paths ["target"]
                    :clean-targets ^{:protect false} ["target" :target-path]
 
-                   :figwheel {:open-file-command "emacsclient"}}})
+                   :figwheel {:open-file-command "emacsclient"}
+                   :cljsbuild {:builds [{:id "bench-factui"
+                                         :source-paths ["src" "dev"]
+                                         ;:figwheel {:on-jsload "factui.rum/refresh"}
+                                         :compiler {:main bench.factui
+                                                    :optimizations :advanced
+                                                    :asset-path "js/out"
+                                                    :output-to "target/public/js/bench-factui.js"
+                                                    :output-dir "target/public/js/out"
+                                                    :foreign-libs [{:provides ["cljsjs.react-dom"]
+                                                                    :file "cljsjs/react-dom/development/react-dom.inc.js"
+                                                                    :file-min "cljsjs/react-dom/development/react-dom.inc.js"}
+                                                                   {:provides ["cljsjs.react"]
+                                                                    :file "cljsjs/react-with-addons/development/react-with-addons.inc.js"
+                                                                    :file-min "cljsjs/react-with-addons/development/react-with-addons.inc.js"}]
+                                                    :cache-analysis false}}]}
+                   }})
