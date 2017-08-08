@@ -11,8 +11,10 @@
         ::fact-constraint ::fact-constraint
         ::test-expr ::test-expr))
 
-(s/def ::boolean-expr (s/tuple #{:and :or :not} (s/or ::boolean-expr
-                                                      ::fact-constraint)))
+(s/def ::boolean-expr
+  (s/cat ::operator #{:and :or :not}
+         ::exprs (s/+ (s/or ::boolean-expr ::boolean-expr
+                            ::fact-constraint ::fact-constraint))))
 
 (s/def ::test-expr (s/tuple #{:test} ::s-expression))
 

@@ -113,6 +113,22 @@
   (api/transact-logical! [{:db/id ?p
                            :person/likes "Alcohol"}]))
 
+(api/defquery query-with-boolean-logic
+  "Query using 'or' & 'and' clauses"
+  [:find [?name ...]
+   :where
+   [?p :person/name ?name]
+   (or [?p :person/likes "Champagne"]
+       (and [?p :person/likes "Wine"]
+            [?p :person/likes "Cheese"]))])
+
+(api/defquery query-with-negation
+  "Query using a 'not' clause"
+  [:find [?name ...]
+   :where
+   [?p :person/name ?name]
+   [?p :person/likes "Beer"]
+   (not [?p :person/likes "Cheese"])])
 
 (api/rulebase rulebase factui.api-test)
 (def base (api/session rulebase test-schema))
@@ -211,3 +227,23 @@
     (is (= result2 #{[:person/id 42]
                      [:person/name "Luke"]
                      [:person/active true]}))))
+
+(deftest boolean-logic-test
+  (let [s1 (api/transact-all base [{:person/name "Luke"
+                                    :person/likes ["Beer" "Cheese"]}
+                                   {:person/name "John"
+                                    :person/likes ["Champagne" "Beer"]}
+                                   {:person/name "Ed"
+                                    :person/likes ["Wine" "Cheese"]}])
+        result (api/query s1 query-with-boolean-logic)]
+    (is (= result #{"John" "Ed"}))))
+
+(deftest negation-test
+  (let [s1 (api/transact-all base [{:person/name "Luke"
+                                    :person/likes ["Beer" "Cheese"]}
+                                   {:person/name "John"
+                                    :person/likes ["Champagne" "Beer"]}
+                                   {:person/name "Ed"
+                                    :person/likes ["Wine" "Cheese"]}])
+        result (api/query s1 query-with-negation)]
+    (is (= result #{"John"}))))

@@ -78,7 +78,8 @@
                        ::not-join-clause ::not-join-clause
                        ::or-clause ::or-clause
                        ::or-join-clause ::or-join-clause
-                       ::expression-clause ::expression-clause))
+                       ::expression-clause ::expression-clause
+                       ::and-clause ::and-clause))
 
 (s/def ::not-clause (s/cat ::src-var (s/? ::src-var)
                            ::not #{'not}
@@ -89,18 +90,18 @@
                                 ::variables (s/coll-of ::variable :min-count 1)
                                 ::clauses (s/+ ::clause)))
 
+(s/def ::and-clause (s/cat ::and #{'and} ::clauses (s/+ ::clause)))
+
 (s/def ::or-clause (s/cat ::src-var (s/? ::src-var)
                           ::or #{'or}
-                          ::clauses (s/+ (s/or :and-clause ::and-clause
-                                              :clause ::clause))))
+                          ::clauses (s/+ ::clause)))
 
 (s/def ::or-join-clause  (s/cat ::src-var (s/? ::src-var)
                                 ::or-join #{'or-join}
                                 ::variables (s/coll-of ::variable :min-count 1)
-                                ::clauses (s/+ (s/or ::and-clause ::and-clause
-                                                     ::clause ::clause))))
+                                ::clauses (s/+ ::clause)))
 
-(s/def ::and-clause (s/cat ::and #{'and} ::clauses (s/+ ::clause)))
+
 
 (s/def ::expression-clause (s/or ::fn-expr ::fn-expr
                                  ::pred-expr ::pred-expr

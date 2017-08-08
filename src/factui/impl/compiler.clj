@@ -21,7 +21,7 @@
       [::ds/src-var (throw (ex-info "Datalog sources are not supported." {}))])))
 
 (defn- compile-constraint
-  "Convert data pattern terms toa Clara fact constraint"
+  "Convert data pattern terms to a Clara fact constraint"
   [[[e-tag e-form]
     [a-tag a-form]
     [v-tag v-form]]]
@@ -40,6 +40,14 @@
                                               'factui.facts/Datom
                                               'factui.facts.Datom)
                              ::cs/s-expressions exprs}])))
+
+(defn- compile-boolean
+  "Given an operation & set of clauses, emit a conformed Clara boolean
+   constraint"
+  [op clauses]
+  [::cs/boolean-expr
+   {::cs/operator op
+    ::cs/exprs clauses}])
 
 (defn compile-defquery
   "Compile the arguments to a `defquery` form"
@@ -77,8 +85,10 @@
                                     (assoc-in [::cs/lhs ::cs/conditions] where)
                                     (update ::fs/query dissoc ::where))
 
-    ;; Clean up empty query
-    ;[::fs/query {}] nil
+
+    [::ds/or-clause {::ds/clauses clauses}] (compile-boolean :or clauses)
+    [::ds/not-clause {::ds/clauses clauses}] (compile-boolean :not clauses)
+    [::ds/and-clause {::ds/clauses clauses}] (compile-boolean :and clauses)
 
     ;; find is temporarily unused
     [::find _] nil
@@ -87,9 +97,8 @@
     [::with _] nil
 
     ;; Not-yet-implemented things
-    [::ds/or-clause _] (throw (ex-info "'or' not yet implemented" {}))
+
     [::ds/or-join-clause _] (throw (ex-info "'or-join' not yet implemented" {}))
-    [::ds/not-clause _] (throw (ex-info "'not' not yet implemented" {}))
     [::ds/not-join-clause _] (throw (ex-info "'not-join' not yet implemented" {}))
     [::ds/fn-expr _] (throw (ex-info "fn-expr not yet implemented" {}))
     [::ds/pred-expr _] (throw (ex-info "pred-expr not yet implemented" {}))
@@ -116,19 +125,19 @@
 
     ::fs/rhs ::cs/rhs
 
+    [::ds/or-clause {::ds/clauses clauses}] (compile-boolean :or clauses)
+    [::ds/not-clause {::ds/clauses clauses}] (compile-boolean :not clauses)
+    [::ds/and-clause {::ds/clauses clauses}] (compile-boolean :and clauses)
+
     ;; Build conditions
     [::ds/expression-clause [::ds/data-pattern {::ds/terms terms}]] (compile-constraint terms)
 
     ;; Not-yet-implemented things
-    [::ds/or-clause _] (throw (ex-info "'or' not yet implemented" {}))
     [::ds/or-join-clause _] (throw (ex-info "'or-join' not yet implemented" {}))
-    [::ds/not-clause _] (throw (ex-info "'not' not yet implemented" {}))
     [::ds/not-join-clause _] (throw (ex-info "'not-join' not yet implemented" {}))
     [::ds/fn-expr _] (throw (ex-info "fn-expr not yet implemented" {}))
     [::ds/pred-expr _] (throw (ex-info "pred-expr not yet implemented" {}))
     [::ds/rule-expr _] (throw (ex-info "rule-expr not yet implemented" {}))
-
-
 
     :else n))
 
