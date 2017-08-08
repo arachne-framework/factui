@@ -79,11 +79,15 @@
                        ::or-clause ::or-clause
                        ::or-join-clause ::or-join-clause
                        ::expression-clause ::expression-clause
-                       ::and-clause ::and-clause))
+                       ::and-clause ::and-clause
+                       ::maybe-clause ::maybe-clause))
 
 (s/def ::not-clause (s/cat ::src-var (s/? ::src-var)
                            ::not #{'not}
                            ::clauses (s/+ ::clause)))
+
+(s/def ::maybe-clause (s/cat ::maybe #{'maybe} ::clauses (s/+ ::clause)))
+
 
 (s/def ::not-join-clause (s/cat ::src-var (s/? ::src-var)
                                 ::not-join #{'not-join}

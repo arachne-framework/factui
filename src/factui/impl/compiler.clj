@@ -49,6 +49,18 @@
    {::cs/operator op
     ::cs/exprs clauses}])
 
+(defn- compile-maybe
+  "Given a maybe clause, emit a Clara expression where either a set of options
+   or its negation may be true."
+  [clauses]
+  (let [and [::cs/boolean-expr {::cs/operator :and
+                                ::cs/exprs clauses}]]
+    [::cs/boolean-expr
+     {::cs/operator :or
+      ::cs/exprs [and
+                  [::cs/boolean-expr {::cs/operator :not
+                                      ::cs/exprs [and]}]]}]))
+
 (defn compile-defquery
   "Compile the arguments to a `defquery` form"
   [n]
@@ -90,6 +102,8 @@
     [::ds/not-clause {::ds/clauses clauses}] (compile-boolean :not clauses)
     [::ds/and-clause {::ds/clauses clauses}] (compile-boolean :and clauses)
 
+    [::ds/maybe-clause {::ds/clauses clauses}] (compile-maybe clauses)
+
     ;; find is temporarily unused
     [::find _] nil
 
@@ -128,6 +142,8 @@
     [::ds/or-clause {::ds/clauses clauses}] (compile-boolean :or clauses)
     [::ds/not-clause {::ds/clauses clauses}] (compile-boolean :not clauses)
     [::ds/and-clause {::ds/clauses clauses}] (compile-boolean :and clauses)
+
+    [::ds/maybe-clause {::ds/clauses clauses}] (compile-maybe clauses)
 
     ;; Build conditions
     [::ds/expression-clause [::ds/data-pattern {::ds/terms terms}]] (compile-constraint terms)

@@ -130,6 +130,13 @@
    [?p :person/likes "Beer"]
    (not [?p :person/likes "Cheese"])])
 
+(api/defquery query-with-maybe
+  "Query using a 'not' clause"
+  [:find ?name ?thing
+   :where
+   [?p :person/name ?name]
+   (maybe [?p :person/likes ?thing])])
+
 (api/rulebase rulebase factui.api-test)
 (def base (api/session rulebase test-schema))
 
@@ -247,3 +254,16 @@
                                     :person/likes ["Wine" "Cheese"]}])
         result (api/query s1 query-with-negation)]
     (is (= result #{"John"}))))
+
+(deftest maybe-test
+  (let [s1 (api/transact-all base [{:person/name "Luke"
+                                    :person/likes ["Beer" "Cheese"]}
+                                   {:person/name "John"
+                                    ;:person/likes ["Champagne"]
+                                    }
+                                   {:person/name "Ed"}])
+        result (api/query s1 query-with-maybe)]
+    (is (= result #{["Luke" "Beer"]
+                    ["Luke" "Cheese"]
+                    ["John" "Champagne"]
+                    ["Ed" nil]}))))
