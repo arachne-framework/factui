@@ -193,10 +193,12 @@
   #?(:clj (println "Rebuilding session due to code reload. Logical rule state will be lost. Rebuilding...")
      :cljs (.log js/console "Rebuilding session due to code reload. Logical rule state will be lost. Rebuilding..."))
   (let [new-session (session base schema)
-        populated-session (transact-all new-session (store/datoms (:store old-session)))]
-    #?(:clj (println "...rebuild complete.")
-       :cljs (.log js/console "...rebuild complete."))
-    populated-session))
+        datoms (store/datoms (:store old-session))]
+    (when-not (empty? datoms)
+      (let [populated-session (transact-all new-session datoms)]
+        #?(:clj  (println "...rebuild complete.")
+           :cljs (.log js/console "...rebuild complete."))
+        populated-session))))
 
 (defn register
   "Register a channel which will recieve notification when a query's results change."

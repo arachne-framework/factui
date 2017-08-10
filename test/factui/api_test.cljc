@@ -259,7 +259,7 @@
   (let [s1 (api/transact-all base [{:person/name "Luke"
                                     :person/likes ["Beer" "Cheese"]}
                                    {:person/name "John"
-                                    ;:person/likes ["Champagne"]
+                                    :person/likes ["Champagne"]
                                     }
                                    {:person/name "Ed"}])
         result (api/query s1 query-with-maybe)]
