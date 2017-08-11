@@ -5,31 +5,15 @@
   [query-name query]
   `(do
      (f/defquery ~query-name ~query)
-
-     {:will-mount #(on-update % ~query-name)
-
-      :will-update #(on-update % ~query-name)
-
-      :wrap-render (fn [render-fn#]
-                     (fn [state# & render-args#]
-                       (binding [*results* @(::results state#)]
-                         (apply render-fn# state# render-args#))))
-
-      :will-unmount (fn [state#]
-                      (deregister state# ~query-name))}))
+     (mixin ~query-name)))
 
 (defmacro q
-  "Define a FactUI query, constructing a Rum mixin which will watch for
-   changes to the given query, and re-render whenever the query results change.
+  "Define a FactUI query and return a Rum mixin in a single step.
 
-   The following assumptions must hold, regarding the component:
+  Arguments are as for `factui.api/defquery`.
 
-   - The first argument to the component is an application state atom
-   - The next N arguments are query inputs, where N is the number of inputs
-   defined by the specified query.
-
-   The component does not additional update semantics, but the FactUI mixin is
-   fully composable with rum/static and rum/local."
+  See the docstring for `factui.rum/mixin` for details on the semantics of the
+  resulting mixin."
   ([query]
    (build (gensym "factui-rum-query-") query))
   ([query-name query]

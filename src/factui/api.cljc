@@ -195,7 +195,8 @@
   (let [new-session (session base schema)
         datoms (store/datoms (:store old-session))]
     (when-not (empty? datoms)
-      (let [populated-session (transact-all new-session datoms)]
+      (let [ops (map (fn [[e a v]] [:db/add e a v]) datoms)
+            populated-session (transact-all new-session ops)]
         #?(:clj  (println "...rebuild complete.")
            :cljs (.log js/console "...rebuild complete."))
         populated-session))))

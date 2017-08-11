@@ -1,10 +1,8 @@
 (ns factui.ui.dev
   (:require [factui.api :as f :include-macros true]
-            [factui.rum :as fr :refer [*results*] :refer-macros [q]]
+            [factui.rum :as fr :refer [*results*]]
             [rum.core :as rum :include-macros true]
-
             [cljs.pprint :as pprint]
-            [factui.impl.store :as store]
             [cljs.core.async :as a])
   (:require-macros [clojure.core.async]))
 
@@ -32,11 +30,13 @@
                   {:task/title (str "Task " (rand-string))
                    :task/completed false})))
 
-(rum/defc Task < (q [:find [?title ?completed]
-                     :in ?task
-                     :where
-                     [?task :task/title ?title]
-                     [?task :task/completed ?completed]])
+(f/defquery task [:find [?title ?completed]
+                  :in ?task
+                  :where
+                  [?task :task/title ?title]
+                  [?task :task/completed ?completed]])
+
+(rum/defc Task < (fr/mixin task)
                  {:key-fn (fn [_ id] id)}
                  rum/static
 
@@ -53,9 +53,11 @@
      " "
      title]))
 
-(rum/defc TaskList < (q [:find ?t ?title
-                         :where
-                         [?t :task/title ?title]])
+(f/defquery tasklist [:find ?t ?title
+                      :where
+                      [?t :task/title ?title]])
+
+(rum/defc TaskList < (fr/mixin tasklist)
                      rum/static
   [app-state]
   [:div
@@ -70,7 +72,7 @@
                          (fr/transact! app-state (new-tasks 500)))}
     "Add 500 Tasks"]
    [:button {:on-click (fn []
-                         (pprint/pprint (store/datoms (:store @app-state))))}
+                         (pprint/pprint (fr/datoms @app-state)))}
     "Dump Datoms"]
    [:br]
    [:br]

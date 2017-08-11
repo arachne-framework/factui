@@ -1,7 +1,8 @@
 (ns factui.rum
   (:require [rum.core :as rum]
             [factui.api :as f :include-macros true]
-            [cljs.core.async :as a])
+            [cljs.core.async :as a]
+            [factui.impl.store :as store])
   (:require-macros [cljs.core.async.macros :refer [go-loop]]))
 
 (def ^:private *rebuild-on-refresh* (atom true))
@@ -29,25 +30,22 @@
 
 (defn- deregister
   "Deregister a Rum mixin from an active query"
-  [state query]
+  [state query args]
   (when-let [ch (::results-ch state)]
-    (let [session (first (:rum/args state))
-          args (query-args state query)]
-      (swap! session f/deregister query args ch))
+    (swap! (::session-atom state) f/deregister query args ch)
     (a/close! ch))
-  (dissoc state ::registered-args ::results-ch))
+  (dissoc state ::query-args ::results-ch ::session-atom))
 
 ;; Defines the following keys in the Rum state:
 ; ::results => atom containing latest query results (if any)
 ; ::results-ch => channel upon which will be placed new results
-; ::registered-args => args registered to the query
+; ::query-args => args registered to the query
+; ::session-atom => atom containing the session to which the query was registered.
 
 (defn- register
   "Register a Rum component"
-  [state query]
-  (let [session (first (:rum/args state))
-        args (query-args state query)
-        results (atom (apply f/query @session query args))
+  [state query session args]
+  (let [results (atom (apply f/query @session query args))
         ch (a/chan)]
     (swap! session f/register query args ch)
     (go-loop []
@@ -55,7 +53,8 @@
         (reset! results r)
         (rum/request-render (:rum/react-component state))
         (recur)))
-    (assoc state ::registered-args (:rum/args state)
+    (assoc state ::query-args args
+                 ::session-atom session
                  ::results results
                  ::results-ch ch)))
 
@@ -63,16 +62,51 @@
   "Called whenever the component is about to render, both the first time and
    subsequent times (:will-mount and :will-update)
 
-   Takes the FactUI query and the Rum state and returns updated state."
-
+   Takes the FactUI query and the Rum state and returns updated state.
+   Deregisters and re-registers the query with new arguments whenever the query
+   arguments change."
   [state query]
-  (if (= (:rum/args state) (::registered-args state))
-    state
-    (-> state
-      (deregister query)
-      (register query))))
+  (let [session (first (:rum/args state))
+        args (query-args state query)]
+    (if (and (= session (::session-atom state))
+             (= args (::query-args state)))
+      state
+      (-> state
+        (deregister query args)
+        (register query session args)))))
 
 (def ^:dynamic *results*)
+
+(defn mixin
+  "Construct a Rum mixin based on the given query, which must be a reactive
+   FactUI query (such as defined by `factui.api/defquery`.)
+
+  Components using this mixin expect the following:
+
+   - The first argument to the component constructor must be an application state atom
+   - The next N arguments are passed to the query as inputs, where N = the
+     number of inputs defined by the specified query.
+
+  Inside the component's render body, the `factui.rum/*results*` dynamic var
+  will be bound to the query results.
+
+  This mixin will cause the Rum component to be re-rendered whenever the query
+  results change. It does not affect Rum's component update semantics in any
+  other way, and may be freely combined with other Rum mixins (`rum/static` is
+  reccomended.)"
+  [query]
+
+  {:will-mount #(on-update % query)
+
+   :will-update #(on-update % query)
+
+   :wrap-render (fn [render-fn]
+                  (fn [state & render-args]
+                    (binding [*results* @(::results state)]
+                      (apply render-fn state render-args))))
+
+   :will-unmount (fn [state]
+                   (deregister state query (::query-args state)))})
 
 ;; Used to convey bindings out of a "transact" swap.
 (def ^:dynamic *bindings*)
@@ -117,3 +151,9 @@
   Useful for development, using Figwheel's :on-jsload"
   []
   (swap! version inc))
+
+(defn datoms
+  "Return a lazy seq of all the datoms in the given FactUI session. Not
+   particularly efficient, useful for debugging purposes."
+  [session]
+  (store/datoms (:store session)))
