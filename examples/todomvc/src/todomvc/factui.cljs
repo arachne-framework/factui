@@ -17,9 +17,6 @@
 
 (defn ^:export main
   []
-  (let [app-state (fr/initialize
-                    #'rulebase
-                    schema/schema
-                    #'ui/App
-                    (.getElementById js/document "root"))]
+  (let [mount #(rum/mount (@#'ui/App %) (.getElementById js/document "root"))
+        app-state (fr/initialize #'rulebase schema/schema mount)]
     (fr/transact! app-state initial-data)))

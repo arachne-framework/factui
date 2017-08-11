@@ -127,12 +127,19 @@
 (defonce ^:private version (atom 0))
 
 (defn initialize
-  "Start application rendering to the given root node, given a base Clara session"
-  [rulebase schema root-component root-element]
-  (let [app-state-holder (atom (atom (f/session @rulebase schema)))
-        render #(rum/mount (@root-component @app-state-holder) root-element)]
+  "Initialize an application with the specified rulebase and schema, calling
+   the provided callback once when initialization is complete, and again
+   whenever the page is reloaded during development (e.g, due to a Figwheel
+   reload.)
 
-    (render)
+   The provided callback is passed an atom containing a session.
+
+   Note that the rulebase must be provided as a Var, not as a value, to ensure
+   that new values can be retrieved after a Figwheel reload."
+  [rulebase schema on-load]
+  (let [app-state-holder (atom (atom (f/session @rulebase schema)))]
+
+    (on-load @app-state-holder)
 
     (add-watch version :version-watch
       (fn [_ _ _ version]
@@ -141,7 +148,7 @@
                             (f/rebuild-session @rulebase old-session schema)
                             old-session)]
           (reset! app-state-holder (atom new-session))
-          (render))))
+          (on-load @app-state-holder))))
 
     @app-state-holder))
 

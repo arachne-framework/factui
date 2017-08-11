@@ -112,14 +112,13 @@ There are several elements here to unpack.
 
 #### Step 3: initialize rendering
 
-Now you can initialize rendering of your application. FactUI's rum wrapper provides a single function to initialize an app state atom and start rendering it to the root component. The wrapper also handles ensuring that the application can successfully reload (preserving application state) after a recompile during development (such as from Figwheel.)
+Now you can initialize rendering of your application. FactUI's rum wrapper provides a single function to initialize an app state atom. The wrapper also handles ensuring that the application can successfully reload (preserving application state) after a recompile during development (such as from Figwheel.)
 
-`factui.rum/initialize` takes 4 arguments:
+`factui.rum/initialize` takes 3 arguments:
 
 1. A var identifying the rulebase to use.
 2. The schema to use.
-3. A var identifying the constructor of the root component. The root component constructor must take the application state atom as a single argument.
-4. The root DOM element where the root component will be mounted using React.
+3. A function which will be called with an atom containg the application state session on initial load, and whenever the page reloads.
 
 The return value is an atom containing an initialized but empty application state value.
 
@@ -128,16 +127,15 @@ The return value is an atom containing an initialized but empty application stat
 ```clojure
 
 (defn ^:export main
-    []
-    (let [app-state (fr/initialize
-                        #'rulebase
-                        schema
-                        #'Layout
-                        (.getElementById js/document "root"))]
-        (fr/transact! initial-data)))
+  []
+  (let [dom-root (.getElementById js/document "root")
+        mount (fn [app-state] (rum/mount ((deref '#RootComponent) app-state)
+                                          dom-root))
+        app-state (fr/initialize #'rulebase schema mount)]
+    (fr/transact! initial-data)))
 ```
 
-Note again that the arguments for the rulebase and root component must be *vars*, not *values*. This ensures that they can be reloaded after being redefined by hiccup.
+Note again that the argument for the rulebase must be a *var*, not a *value*. This ensures that it can be reloaded after being redefined by hiccup. The user-supplied `mount` function in this example dereferences a var for the same reason; so the new value will get picked up after a Figwheel page reload.
 
 If you are using Figwheel, you should also set the `factui.rum/refresh` function as the value of Figwheel's `:on-jsload` config key to ensure that your application refreshes correctly after a Figwheel reload.
 

@@ -93,9 +93,6 @@
 
 (defn ^:export main
   []
-  (let [app-state (fr/initialize
-                    #'rulebase
-                    schema
-                    #'TaskList
-                    (.getElementById js/document "root"))]
+  (let [mount #(rum/mount (@#'TaskList %) (.getElementById js/document "root"))
+        app-state (fr/initialize #'rulebase schema mount)]
     (fr/transact! app-state initial-data)))
