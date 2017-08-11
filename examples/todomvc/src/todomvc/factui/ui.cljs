@@ -1,17 +1,18 @@
 (ns todomvc.factui.ui
   (:require [clojure.string :as str]
             [factui.api :as f :include-macros true]
-            [factui.rum :as fr :refer [*results*] :refer-macros [q]]
+            [factui.rum :as fr :refer [*results*]]
             [rum.core :as rum :include-macros true]))
+
+(f/defquery todo-q [:find [?name ?completed]
+                    :in ?t
+                    :where
+                    [?t :task/name ?name]
+                    (maybe [?t :task/completed ?completed])])
 
 (rum/defc Todo < rum/static
                  {:key-fn (fn [_ todo] todo)}
-                 (fr/q [:find [?name ?completed]
-                        :in ?t
-                        :where
-                        [?t :task/name ?name]
-                        (maybe [?t :task/completed ?completed])])
-
+                 (fr/mixin todo-q)
   [app-state ?todo]
   (let [[name completed] *results*]
     [:li {:style {:display "inline"}}
@@ -25,12 +26,15 @@
       [:label name]
       [:button.destroy]]]))
 
+(f/defquery todo-list-q [:find ?mode ?t ?completed
+                         :where
+                         [?g :global/view-mode ?mode]
+                         [?g :global/tasks ?t]
+                         (maybe [?t :task/completed ?completed])])
+
+
 (rum/defc TodoList < rum/static
-                     (fr/q [:find ?mode ?t ?completed
-                            :where
-                            [?g :global/view-mode ?mode]
-                            [?g :global/tasks ?t]
-                            (maybe [?t :task/completed ?completed])])
+                     (fr/mixin todo-list-q)
   [app-state]
   (let [todos (->> *results*
                 (filter (fn [[mode t completed]]
@@ -42,11 +46,13 @@
     [:ul#todo-list (for [todo todos]
                      (Todo app-state todo))]))
 
+(f/defquery input-q [:find [?t ?value]
+                     :where
+                     [_ :global/new-task ?t]
+                     [?t :task/name ?value]])
+
 (rum/defc PrimaryInput < rum/static
-                         (fr/q [:find [?t ?value]
-                                :where
-                                [_ :global/new-task ?t]
-                                [?t :task/name ?value]])
+                         (fr/mixin input-q)
   [app-state]
   (let [[task value] *results*
         clear (fn [evt] (fr/transact! app-state
@@ -70,11 +76,13 @@
                                        27 (clear evt)     ;; escape
                                        nil))}]))
 
+(f/defquery pending-count-q [:find [?t ...]
+                             :where
+                             [?g :global/tasks ?t]
+                             (not [?t :task/completed true])])
+
 (rum/defc PendingTaskCount < rum/static
-                             (fr/q [:find [?t ...]
-                                    :where
-                                    [?g :global/tasks ?t]
-                                    (not [?t :task/completed true])])
+                             (fr/mixin pending-count-q)
   [app-state]
   [:span#todo-count
    [:strong (count *results*)]
@@ -91,10 +99,12 @@
                        false)}
         label]])
 
+(f/defquery mode-q [:find ?mode .
+                      :where
+                      [?g :global/view-mode ?mode]])
+
 (rum/defc Footer < rum/static
-                   (fr/q [:find ?mode .
-                          :where
-                          [?g :global/view-mode ?mode]])
+                   (fr/mixin mode-q)
   [app-state]
   [:footer#footer
    (PendingTaskCount app-state)
