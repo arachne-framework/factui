@@ -164,3 +164,13 @@
    particularly efficient, useful for debugging purposes."
   [session]
   (store/datoms (:store session)))
+
+(defn then
+  "Convenience function. Return a simple event handler function that transacts
+   the given data. Accepts plain entity maps as well as normal txdata. Swallows
+   the event, preventing it from propagating."
+  [app-state txdata]
+  (let [txdata (if (map? txdata) [txdata])]
+    (fn [evt]
+      (.preventDefault evt)
+      (transact! app-state txdata))))
