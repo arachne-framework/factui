@@ -1,22 +1,22 @@
 (ns factui.api
-  (:require [factui.impl.session :as session]
+  (:require [factui.facts :as f]
+            [factui.impl.session :as session]
             [factui.impl.store :as store]
             [factui.impl.rules]
+            [factui.specs :as fs]
+            [factui.specs.clara :as cs]
+            [factui.specs.datalog :as ds]
+            [clojure.walk :as w]
+            [clojure.spec.alpha :as s]
+            [clojure.string :as str]
    #?(:clj  [factui.impl.compiler :as comp])
    #?(:clj  [clara.rules :as cr]
       :cljs [clara.rules :as cr :include-macros true])
    #?(:clj  [clara.rules.compiler :as com])
-            [factui.specs :as fs]
-            [factui.specs.clara :as cs]
-            [factui.specs.datalog :as ds]
-            [clojure.spec.alpha :as s]
-            [clojure.string :as str]
    #?(:clj  [clojure.core.async :as a :refer [go go-loop <! >!]]
       :cljs [cljs.core.async :as a :refer [<! >!]])
-            [factui.facts :as f]
-   #?(:clj [clojure.pprint :as pprint]
-      :cljs     [cljs.pprint :as pprint])
-            )
+   #?(:clj  [clojure.pprint :as pprint]
+      :cljs [cljs.pprint :as pprint]))
   #?(:cljs (:require-macros [cljs.core.async.macros :refer [go go-loop]])))
 
 #?(:clj (defmacro rulebase
@@ -225,3 +225,16 @@
       (:name query)
       params
       ch)))
+
+(defn clean-tx
+  "Convenience function to remove nil values from txdata.
+
+  Applicaiton code used to generate txdata can be much cleaner, if it is
+  allowed to emit nil values."
+  [txdata]
+  (w/prewalk (fn [n]
+               (cond
+                 (map? n) (into {} (filter (fn [[_ v]] (not (nil? v))) n))
+                 (coll? n) (filterv identity n)
+                 :else n))
+    txdata))
