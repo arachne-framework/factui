@@ -235,6 +235,6 @@
   (w/prewalk (fn [n]
                (cond
                  (map? n) (into {} (filter (fn [[_ v]] (not (nil? v))) n))
-                 (coll? n) (filterv identity n)
+                 (coll? n) (filterv some? n)
                  :else n))
     txdata))
