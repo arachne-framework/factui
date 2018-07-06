@@ -297,16 +297,33 @@
   (let [[s1 bindings] (api/transact base [{:db/id -42
                                            :person/id 42
                                            :person/name "Luke"
-                                           :person/likes ["Cheese" "Beer"]}])
+                                           :person/likes ["Cheese" "Beer"]}
+                                          {:db/id -20
+                                           :person/id 20
+                                           :person/name "Eugene"
+                                           :person/friends -42}])
+        ;; entitity we retract
         eid (bindings -42)
-        r1 (api/query s1 all-attrs eid)]
+        r1 (api/query s1 all-attrs eid)
+        ;; entity we retain
+        fid (bindings -20)
+        fr1 (api/query s1 all-attrs fid)]
+
     (is (= r1 #{[eid :person/id 42]
                 [eid :person/name "Luke"]
                 [eid :person/likes "Cheese"]
                 [eid :person/likes "Beer"]}))
+
+    (is (= fr1 #{[fid :person/id 20]
+                 [fid :person/name "Eugene"]
+                 [fid :person/friends eid]}))
+
     (let [s2 (api/transact-all s1 [[:db.fn/retractEntity eid]])
-          r2 (api/query s2 all-attrs eid)]
-      (is (empty? r2)))))
+          r2 (api/query s2 all-attrs eid)
+          fr2 (api/query s2 all-attrs fid)]
+      (is (empty? r2))
+      (is (= fr2 #{[fid :person/id 20]
+                   [fid :person/name "Eugene"]})))))
 
 (deftest retract-attrs
   (let [[s1 bindings] (api/transact base [{:db/id -42
