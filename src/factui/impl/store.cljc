@@ -116,29 +116,49 @@
 (defn- index-insertions
   "Update the store's index with the given concrete datoms"
   [store datoms]
-  (assoc store :index
-               (reduce (fn [m {:keys [e a v]}]
-                         (cond
-                           (transient? store a) m
-                           (card-one? store a) (assoc-in m [e a] v)
-                           :else (update-in m [e a] (fnil conj #{}) v)))
-                 (:index store)
-                 datoms)))
+  (assoc store
+         :index (reduce (fn [m {:keys [e a v]}]
+                          (cond
+                            (transient? store a) m
+                            (card-one? store a) (assoc-in m [e a] v)
+                            :else (update-in m [e a] (fnil conj #{}) v)))
+                        (:index store)
+                        datoms)
+         :vae-index (reduce (fn [m {:keys [e a v]}]
+                              (cond
+                                (transient? store a) m
+                                (not (ref? store a)) m
+                                (card-one? store a) (assoc-in m [v a] e)
+                                :else (update-in m [v a] (fnil conj #{}) e)))
+                            (:vae-index store)
+                            datoms)))
 
 (defn- index-retractions
   "Update the index by retracting the given concrete datoms"
   [store datoms]
-  (assoc store :index
-               (reduce (fn [m {:keys [e a v]}]
-                         (if (card-one? store a)
-                           (-> m
-                             (update-in [e] dissoc a)
-                             (clean e a))
-                           (-> m
-                             (update-in [e a] disj v)
-                             (clean e a))))
-                 (:index store)
-                 datoms)))
+  (assoc store
+         :index (reduce (fn [m {:keys [e a v]}]
+                          (if (card-one? store a)
+                            (-> m
+                                (update-in [e] dissoc a)
+                                (clean e a))
+                            (-> m
+                                (update-in [e a] disj v)
+                                (clean e a))))
+                        (:index store)
+                        datoms)
+         :vae-index (reduce (fn [m {:keys [e a v]}]
+                              (if-not (ref? store a)
+                                m
+                                (if (card-one? store a)
+                                  (-> m
+                                      (update-in [v] dissoc a)
+                                      (clean v a))
+                                  (-> m
+                                      (update-in [v a] disj e)
+                                      (clean v a)))))
+                            (:vae-index store)
+                            datoms)))
 
 (defn- op-identity
   "If a :db/add operation expresses an identity, return the tuple [[a v] e], otherwise nil"
@@ -242,11 +262,19 @@
 (defn- retract-entity-ops
   "Return :db/remove operations that constitute a :db.fn/retractEntity operation"
   [store eid]
-  (mapcat (fn [[attr val-or-vals]]
-            (if (coll? val-or-vals)
-              (map (fn [v] [:db/retract eid attr v]) val-or-vals)
-              [[:db/retract eid attr val-or-vals]]))
-    (get-in store [:index eid])))
+  (concat
+   ;; eav
+   (mapcat (fn [[attr val-or-vals]]
+             (if (coll? val-or-vals)
+               (map (fn [v] [:db/retract eid attr v]) val-or-vals)
+               [[:db/retract eid attr val-or-vals]]))
+           (get-in store [:index eid]))
+   ;; vae
+   (mapcat (fn [[attr eid-or-eids]]
+             (if (coll? eid-or-eids)
+               (map (fn [e] [:db/retract e attr eid]) eid-or-eids)
+               [[:db/retract eid-or-eids attr eid]]))
+           (get-in store [:vae-index eid]))))
 
 (defn- retract-attr-ops
   "Expand a :db.fn/retractAttr operation to its individual constituent retractions"
@@ -300,7 +328,7 @@
   [[_ e a v]]
   (f/->Datom e a v))
 
-(defrecord SimpleStore [schema index identities attrs]
+(defrecord SimpleStore [schema index identities attrs vae-index]
   Store
   (resolve [store txdata]
     (let [ops (txdata/operations txdata)
@@ -350,12 +378,15 @@
   "Return an empty SimpleStore instance"
   [schema-txdata]
   (let [schema (build-schema (concat base-schema schema-txdata))]
-    (->SimpleStore schema {} {}
-      {:card-one-attrs (attrs-with schema :db/cardinality :db.cardinality/one)
-       :identity-attrs (attrs-with schema :db/unique :db.unique/identity)
-       :ref-attrs (attrs-with schema :db/valueType :db.type/ref)
-       :component-attrs (attrs-with schema :db/isComponent true)
-       :transient-attrs (attrs-with schema :factui/isTransient true)})))
+    (->SimpleStore schema
+                   {}
+                   {}
+                   {:card-one-attrs (attrs-with schema :db/cardinality :db.cardinality/one)
+                    :identity-attrs (attrs-with schema :db/unique :db.unique/identity)
+                    :ref-attrs (attrs-with schema :db/valueType :db.type/ref)
+                    :component-attrs (attrs-with schema :db/isComponent true)
+                    :transient-attrs (attrs-with schema :factui/isTransient true)}
+                   {})))
 
 (defn datoms
   "Given a store, return a lazy seq of all the datoms in it."
