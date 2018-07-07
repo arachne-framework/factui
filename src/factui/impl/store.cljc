@@ -215,7 +215,7 @@
 
 (defn- resolve-tempids
   "Given a set of operations (which may contain temporary IDs), return a tuple
-   of concrete operatio (with tempids swapped for concrete EIDs) and the Tempid
+   of concrete operations (with tempids swapped for concrete EIDs) and the Tempid
    bindings.
 
    Note: only replaces tempids in :db/add operations."
