@@ -271,12 +271,14 @@
 (deftest clean-tx-test
   (let [in [nil {:foo/bar 42
                  :foo/baz nil
+                 :foo/qux false
                  :foo/nib [nil 42]
                  :foo/nub #{nil 42}
                  :foo/nest {:biz/buz 42
                             :biz/boz nil}}
             nil]
         out [{:foo/bar 42
+              :foo/qux false
               :foo/nib [42]
               :foo/nub [42]
               :foo/nest {:biz/buz 42}}]]
