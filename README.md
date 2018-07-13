@@ -236,7 +236,7 @@ For example, this code creates a listener on your primary app state atom, for th
 
 ```clojure
 (let [results-ch (chan)]
-    (swap! f/register app-state tasks-for-list [42] results-ch)
+    (swap! app-state f/register  tasks-for-list [42] results-ch)
     (go-loop []
         (when-let [results (<! results-ch)]
             (println "Got new results:" results))))
