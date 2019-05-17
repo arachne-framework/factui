@@ -5,8 +5,10 @@
   :middleware [lein-tools-deps.plugin/resolve-dependencies-with-deps-edn]
   :lein-tools-deps/config {:config-files [:install :user :project]}
 
-  :profiles {:test {:plugins [[lein-shell "0.4.0" :exclusions [org.clojure/clojure]]
+  :profiles {:test {:lein-tools-deps/config {:aliases [:clj :test]}
+                    :plugins [[lein-shell "0.4.0" :exclusions [org.clojure/clojure]]
                               [lein-cljsbuild "1.1.6" :exclusions [org.clojure/clojure]]]
+                    :clean-targets ^{:protect false} ["target" :target-path]
                     :cljsbuild {:builds [{:id "dev-figwheel"
                                           :source-paths ["src" "dev"]
                                           :figwheel {:on-jsload "factui.rum/refresh"}
@@ -59,6 +61,7 @@
                                        ["cljsbuild" "once" "test-bench"]
                                        ["shell" "phantomjs" "target/test-bench.js"]]
                               }}
-             :dev {:plugins [[lein-figwheel "0.5.12" :exclusions [org.clojure/clojurescript]]]
+             :dev {:lein-tools-deps/config {:aliases [:clj :dev]}
+                   :plugins [[lein-figwheel "0.5.12" :exclusions [org.clojure/clojurescript]]]
                    :clean-targets ^{:protect false} ["target" :target-path]
                    :figwheel {:open-file-command "emacsclient"}}})

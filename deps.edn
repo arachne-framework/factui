@@ -6,15 +6,11 @@
         org.clojure/core.match {:mvn/version "0.3.0-alpha4"}}
 
  :aliases
- {:clj    {:extra-deps {;; Acts like "provided" :scope from lein
-                        org.clojure/clojure       {:mvn/version "1.10.0"}
-                        org.clojure/clojurescript {:mvn/version "1.9.671"}}}
-  :test   {:extra-paths ["test"]
-           :extra-deps  {org.clojure/test.check {:mvn/version "RELEASE"}}}
-  :runner {:extra-deps {com.cognitect/test-runner
-                        {:git/url "https://github.com/cognitect-labs/test-runner"
-                         :sha     "76568540e7f40268ad2b646110f237a60295fa3c"}}
-           :main-opts  ["-m" "cognitect.test-runner" "-d" "test"]}
-  :dev    {:extra-paths ["dev" "target"]
-           :extra-deps  {figwheel-sidecar {:mvn/version "0.5.12"}
-                         rum              {:mvn/version "0.10.8"}}}}}
+ {:clj  {:extra-deps {;; Clojure(Script) is "provided"
+                      org.clojure/clojure       {:mvn/version "1.10.0"}
+                      org.clojure/clojurescript {:mvn/version "1.10.520"}}}
+  :test {:extra-paths ["test" "target"]
+         :extra-deps  {org.clojure/test.check {:mvn/version "RELEASE"}}}
+  :dev  {:extra-paths ["dev" "target"]
+         :extra-deps  {figwheel-sidecar {:mvn/version "0.5.12"}
+                       rum              {:mvn/version "0.10.8"}}}}}
