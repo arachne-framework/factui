@@ -23,6 +23,15 @@ In broad strokes:
 
 Query notification on updated facts is provided by the [RETE algorithm](https://en.wikipedia.org/wiki/Rete_algorithm), which is designed specifically to provide efficient activiation of rules in response to new facts. FactUI uses [Clara](http://www.clara-rules.org), an excellent RETE implementation for ClojureScript.
 
+## Installation
+
+Add the following to your `deps.edn`:
+
+```
+cjsauer/factui {:git/url "https://github.com/cjsauer/factui.git"
+                :sha     "9222bdd2778c5413792d067b81f3506935e2cdaa"}
+```
+
 ## Usage
 
 Note: This section provides documentation using FactUI's integration with the [Rum](https://github.com/tonsky/rum) React wrapper. FactUI is not tightly coupled with Rum, it is entirely possible to build integration between FactUI and alternative wrappers (such as [Reagent](https://reagent-project.github.io) or [Om](https://github.com/omcljs/om) with relatively little effort. However, those have not yet been built.
