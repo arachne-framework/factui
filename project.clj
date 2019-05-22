@@ -1,13 +1,14 @@
 (defproject org.arachne-framework/factui "1.1.0-SNAPSHOT"
-  :dependencies [[org.clojure/clojure "1.9.0-alpha17" :scope "provided"]
-                 [org.clojure/clojurescript "1.9.671" :scope "provided"]
-                 [org.clojure/core.async "0.3.443"]
-                 [com.cerner/clara-rules "0.15.1" :exclusions [prismatic/schema]]
-                 [prismatic/schema "1.1.6"]
-                 [org.clojure/core.match "0.3.0-alpha4"]]
-  :source-paths ["dev" "src"]
-  :profiles {:test {:plugins [[lein-shell "0.4.0" :exclusions [org.clojure/clojure]]
+
+  ;; tools.deps
+  :plugins [[lein-tools-deps "0.4.5"]]
+  :middleware [lein-tools-deps.plugin/resolve-dependencies-with-deps-edn]
+  :lein-tools-deps/config {:config-files [:install :user :project]}
+
+  :profiles {:test {:lein-tools-deps/config {:aliases [:clj :test]}
+                    :plugins [[lein-shell "0.4.0" :exclusions [org.clojure/clojure]]
                               [lein-cljsbuild "1.1.6" :exclusions [org.clojure/clojure]]]
+                    :clean-targets ^{:protect false} ["target" :target-path]
                     :cljsbuild {:builds [{:id "dev-figwheel"
                                           :source-paths ["src" "dev"]
                                           :figwheel {:on-jsload "factui.rum/refresh"}
@@ -60,11 +61,7 @@
                                        ["cljsbuild" "once" "test-bench"]
                                        ["shell" "phantomjs" "target/test-bench.js"]]
                               }}
-             :dev {:plugins [[lein-figwheel "0.5.12" :exclusions [org.clojure/clojurescript]]]
-                   :dependencies [[figwheel-sidecar "0.5.12"]
-                                  [rum "0.10.8"]]
-                   :source-paths ["dev" "test"]
-                   :resource-paths ["target"]
+             :dev {:lein-tools-deps/config {:aliases [:clj :dev]}
+                   :plugins [[lein-figwheel "0.5.12" :exclusions [org.clojure/clojurescript]]]
                    :clean-targets ^{:protect false} ["target" :target-path]
-
                    :figwheel {:open-file-command "emacsclient"}}})
