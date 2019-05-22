@@ -5,7 +5,7 @@
             [factui.impl.store :as store])
   (:require-macros [cljs.core.async.macros :refer [go-loop]]))
 
-(def ^:private *rebuild-on-refresh* (atom true))
+(def ^:private rebuild-on-refresh (atom true))
 
 (defn set-rebuild-on-refresh
   "Sets whether the session be should be entirely rebuilt on a new rulebase,
@@ -18,7 +18,7 @@
    However, this operation may be expensive with very large sessions. If
    refreshing takes too long, you may wish to disable this."
   [rebuild?]
-  (reset! *rebuild-on-refresh* rebuild?))
+  (reset! rebuild-on-refresh rebuild?))
 
 (defn- query-args
   "Given a Rum state and a query, return a vectory of FactUI query args, based
@@ -144,7 +144,7 @@
     (add-watch version :version-watch
       (fn [_ _ _ version]
         (let [old-session @@app-state-holder
-              new-session (if @*rebuild-on-refresh*
+              new-session (if @rebuild-on-refresh
                             (f/rebuild-session @rulebase old-session schema)
                             old-session)]
           (reset! app-state-holder (atom new-session))
